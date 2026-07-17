@@ -1,0 +1,5 @@
+streamlit>=1.36
+pyairtable>=2.3
+truststore
+qrcode[pil]
+tzdata

@@ -1,0 +1,381 @@
+"""Data layer for The Tot Spot.
+
+Two interchangeable backends:
+  - LocalStore    : a JSON file on disk (+ data/uploads for attachments).
+                    Used automatically when no Airtable credentials are set.
+  - AirtableStore : the real thing. Used when [airtable] secrets are present.
+
+Above this layer, app.py only sees plain dicts. Attachments are represented as
+lists of {"filename": str, "url": str} (Airtable temp URLs, or local paths).
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+# On corporate networks that do TLS inspection (e.g. Cox), Python must trust the
+# OS certificate store rather than its bundled certs. truststore makes the whole
+# process (including pyairtable's requests calls) use the Windows trust store.
+# Harmless off-network, so we always try it.
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
+# --- Table + field names, kept in one place so base and app agree ------------
+KIDS_TABLE = "Kids"
+CHECKINS_TABLE = "Check-Ins"
+ANNOUNCEMENTS_TABLE = "Announcements"
+UPDATES_TABLE = "Daily Updates"
+
+KID_FIELDS = {
+    "name": "Child Name",
+    "birthdate": "Birthdate",
+    "parent_name": "Parent Name",
+    "phone": "Parent Phone",
+    "email": "Parent Email",
+    "notes": "Notes/Allergies",
+    "status": "Status",
+    "signup_date": "Signup Date",
+    "address": "Address",
+    "mother_name": "Mother Name",
+    "mother_phone": "Mother Phone",
+    "father_name": "Father Name",
+    "father_phone": "Father Phone",
+    "emergency1": "Emergency Contact 1",
+    "emergency1_phone": "Emergency Phone 1",
+    "emergency2": "Emergency Contact 2",
+    "emergency2_phone": "Emergency Phone 2",
+    "cohort": "Cohort",
+    "photo_social": "Photo Social Media OK",
+    "photo_blur": "Photo Blur Face",
+    "physician": "Physician Name",
+    "physician_phone": "Physician Phone",
+    "hospital": "Hospital",
+    "hospital_phone": "Hospital Phone",
+    "insurance": "Insurance",
+    "policy_number": "Policy Number",
+    "family_code": "Family Code",
+    "medications": "Medications",
+    "authorized_pickups": "Authorized Pickups",
+    "pin": "PIN",
+}
+KID_ATTACH_FIELD = "Enrollment Form"
+KID_PHOTO_FIELD = "Child Photo"
+
+CHECKIN_FIELDS = {
+    "kid_id": "Child",
+    "date": "Date",
+    "check_in": "Check-In Time",
+    "check_out": "Check-Out Time",
+}
+
+
+# --- Time helpers -------------------------------------------------------------
+def now_local(tz: str) -> datetime:
+    return datetime.now(ZoneInfo(tz))
+
+
+def today_iso(tz: str) -> str:
+    return now_local(tz).strftime("%Y-%m-%d")
+
+
+def time_str(tz: str) -> str:
+    return now_local(tz).strftime("%I:%M %p").lstrip("0")
+
+
+def stamp(tz: str) -> str:
+    """Sortable timestamp string, e.g. '2026-07-17 09:02'."""
+    return now_local(tz).strftime("%Y-%m-%d %H:%M")
+
+
+def new_family_code() -> str:
+    """A short, human-friendly family code (no ambiguous chars)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    raw = uuid.uuid4().int
+    out = []
+    for _ in range(6):
+        out.append(alphabet[raw % len(alphabet)])
+        raw //= len(alphabet)
+    return "".join(out)
+
+
+def new_pin(existing: set[str]) -> str:
+    """A 4-digit code not already in `existing`."""
+    for _ in range(10000):
+        raw = uuid.uuid4().int % 10000
+        pin = f"{raw:04d}"
+        if pin not in existing:
+            return pin
+    return "0000"
+
+
+# ============================================================ LOCAL BACKEND
+class LocalStore:
+    """Persists to a single JSON file. Attachments saved under data/uploads."""
+
+    def __init__(self, path: str = "data/local_db.json"):
+        self.path = Path(path)
+        self.uploads = self.path.parent / "uploads"
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.uploads.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write({"kids": [], "checkins": [], "announcements": [], "updates": []})
+
+    def _read(self) -> dict:
+        db = json.loads(self.path.read_text(encoding="utf-8"))
+        for key in ("kids", "checkins", "announcements", "updates"):
+            db.setdefault(key, [])
+        return db
+
+    def _write(self, db: dict) -> None:
+        self.path.write_text(json.dumps(db, indent=2), encoding="utf-8")
+
+    def _save_file(self, filename: str, content: bytes) -> dict:
+        safe = f"{uuid.uuid4().hex}_{filename}"
+        dest = self.uploads / safe
+        dest.write_bytes(content)
+        return {"filename": filename, "url": str(dest)}
+
+    # kids
+    def list_kids(self) -> list[dict]:
+        return sorted(self._read()["kids"], key=lambda k: k.get("signup_date", ""))
+
+    def add_kid(self, data: dict) -> dict:
+        db = self._read()
+        kid = {"id": str(uuid.uuid4()), "enrollment_form": [], "child_photo": [], **data}
+        db["kids"].append(kid)
+        self._write(db)
+        return kid
+
+    def update_kid_status(self, kid_id: str, status: str) -> None:
+        self.update_kid(kid_id, {"status": status})
+
+    def update_kid(self, kid_id: str, data: dict) -> None:
+        db = self._read()
+        for k in db["kids"]:
+            if k["id"] == kid_id:
+                k.update(data)
+        self._write(db)
+
+    def upload_enrollment_form(self, kid_id: str, filename: str, content: bytes) -> None:
+        self._append_attachment(kid_id, "enrollment_form", filename, content)
+
+    def set_child_photo(self, kid_id: str, filename: str, content: bytes) -> None:
+        # a child has one photo — replace any existing
+        att = self._save_file(filename, content)
+        db = self._read()
+        for k in db["kids"]:
+            if k["id"] == kid_id:
+                k["child_photo"] = [att]
+        self._write(db)
+
+    def _append_attachment(self, kid_id: str, key: str, filename: str, content: bytes) -> None:
+        att = self._save_file(filename, content)
+        db = self._read()
+        for k in db["kids"]:
+            if k["id"] == kid_id:
+                k.setdefault(key, []).append(att)
+        self._write(db)
+
+    # check-ins
+    def list_checkins_for_date(self, date_iso: str) -> list[dict]:
+        return [c for c in self._read()["checkins"] if c.get("date") == date_iso]
+
+    def add_checkin(self, kid_id: str, date_iso: str, tstr: str) -> dict:
+        db = self._read()
+        rec = {"id": str(uuid.uuid4()), "kid_id": kid_id, "date": date_iso,
+               "check_in": tstr, "check_out": ""}
+        db["checkins"].append(rec)
+        self._write(db)
+        return rec
+
+    def set_checkout(self, checkin_id: str, tstr: str) -> None:
+        db = self._read()
+        for c in db["checkins"]:
+            if c["id"] == checkin_id:
+                c["check_out"] = tstr
+        self._write(db)
+
+    # announcements
+    def list_announcements(self) -> list[dict]:
+        return sorted(self._read()["announcements"],
+                      key=lambda a: a.get("created", ""), reverse=True)
+
+    def add_announcement(self, title: str, message: str, posted_date: str, created: str) -> dict:
+        db = self._read()
+        rec = {"id": str(uuid.uuid4()), "title": title, "message": message,
+               "posted_date": posted_date, "created": created}
+        db["announcements"].append(rec)
+        self._write(db)
+        return rec
+
+    def delete_announcement(self, ann_id: str) -> None:
+        db = self._read()
+        db["announcements"] = [a for a in db["announcements"] if a["id"] != ann_id]
+        self._write(db)
+
+    # daily updates
+    def list_updates(self) -> list[dict]:
+        return sorted(self._read()["updates"], key=lambda u: u.get("date", ""), reverse=True)
+
+    def add_update(self, date_iso: str, note: str, cohort: str) -> dict:
+        db = self._read()
+        rec = {"id": str(uuid.uuid4()), "date": date_iso, "note": note,
+               "cohort": cohort, "photos": []}
+        db["updates"].append(rec)
+        self._write(db)
+        return rec
+
+    def add_update_photos(self, update_id: str, files: list[tuple[str, bytes]]) -> None:
+        db = self._read()
+        for u in db["updates"]:
+            if u["id"] == update_id:
+                for filename, content in files:
+                    u.setdefault("photos", []).append(self._save_file(filename, content))
+        self._write(db)
+
+
+# ============================================================ AIRTABLE BACKEND
+class AirtableStore:
+    def __init__(self, token: str, base_id: str):
+        from pyairtable import Api
+
+        api = Api(token)
+        self.kids = api.table(base_id, KIDS_TABLE)
+        self.checkins = api.table(base_id, CHECKINS_TABLE)
+        self.announcements = api.table(base_id, ANNOUNCEMENTS_TABLE)
+        self.updates = api.table(base_id, UPDATES_TABLE)
+
+    @staticmethod
+    def _attachments(value) -> list[dict]:
+        out = []
+        for a in value or []:
+            out.append({"filename": a.get("filename", ""), "url": a.get("url", "")})
+        return out
+
+    @classmethod
+    def _kid_from_record(cls, rec: dict) -> dict:
+        f = {k.strip(): v for k, v in rec.get("fields", {}).items()}
+        kid = {"id": rec["id"]}
+        for key, col in KID_FIELDS.items():
+            kid[key] = f.get(col, "")
+        kid["status"] = kid["status"] or "Waitlist"
+        kid["enrollment_form"] = cls._attachments(f.get(KID_ATTACH_FIELD, []))
+        kid["child_photo"] = cls._attachments(f.get(KID_PHOTO_FIELD, []))
+        return kid
+
+    @staticmethod
+    def _checkin_from_record(rec: dict) -> dict:
+        f = {k.strip(): v for k, v in rec.get("fields", {}).items()}
+        linked = f.get(CHECKIN_FIELDS["kid_id"], [])
+        return {
+            "id": rec["id"],
+            "kid_id": linked[0] if linked else "",
+            "date": f.get(CHECKIN_FIELDS["date"], ""),
+            "check_in": f.get(CHECKIN_FIELDS["check_in"], ""),
+            "check_out": f.get(CHECKIN_FIELDS["check_out"], ""),
+        }
+
+    # kids
+    def list_kids(self) -> list[dict]:
+        recs = self.kids.all(sort=[KID_FIELDS["signup_date"]])
+        return [self._kid_from_record(r) for r in recs]
+
+    def add_kid(self, data: dict) -> dict:
+        payload = {KID_FIELDS[k]: v for k, v in data.items()
+                   if k in KID_FIELDS and v not in (None, "")}
+        return self._kid_from_record(self.kids.create(payload))
+
+    def update_kid_status(self, kid_id: str, status: str) -> None:
+        self.kids.update(kid_id, {KID_FIELDS["status"]: status})
+
+    def update_kid(self, kid_id: str, data: dict) -> None:
+        payload = {KID_FIELDS[k]: v for k, v in data.items() if k in KID_FIELDS}
+        self.kids.update(kid_id, payload)
+
+    def upload_enrollment_form(self, kid_id: str, filename: str, content: bytes) -> None:
+        self.kids.upload_attachment(kid_id, KID_ATTACH_FIELD, filename=filename, content=content)
+
+    def set_child_photo(self, kid_id: str, filename: str, content: bytes) -> None:
+        self.kids.update(kid_id, {KID_PHOTO_FIELD: []})  # replace existing photo
+        self.kids.upload_attachment(kid_id, KID_PHOTO_FIELD, filename=filename, content=content)
+
+    # check-ins
+    def list_checkins_for_date(self, date_iso: str) -> list[dict]:
+        formula = "{%s} = '%s'" % (CHECKIN_FIELDS["date"], date_iso)
+        return [self._checkin_from_record(r) for r in self.checkins.all(formula=formula)]
+
+    def add_checkin(self, kid_id: str, date_iso: str, tstr: str) -> dict:
+        rec = self.checkins.create({
+            CHECKIN_FIELDS["kid_id"]: [kid_id],
+            CHECKIN_FIELDS["date"]: date_iso,
+            CHECKIN_FIELDS["check_in"]: tstr,
+        })
+        return self._checkin_from_record(rec)
+
+    def set_checkout(self, checkin_id: str, tstr: str) -> None:
+        self.checkins.update(checkin_id, {CHECKIN_FIELDS["check_out"]: tstr})
+
+    # announcements
+    def list_announcements(self) -> list[dict]:
+        recs = self.announcements.all()
+        out = [{
+            "id": r["id"],
+            "title": r["fields"].get("Title", ""),
+            "message": r["fields"].get("Message", ""),
+            "posted_date": r["fields"].get("Posted Date", ""),
+            "created": r.get("createdTime", ""),
+        } for r in recs]
+        return sorted(out, key=lambda a: a["created"], reverse=True)
+
+    def add_announcement(self, title: str, message: str, posted_date: str, created: str) -> dict:
+        rec = self.announcements.create({
+            "Title": title, "Message": message, "Posted Date": posted_date,
+        })
+        return {"id": rec["id"], "title": title, "message": message,
+                "posted_date": posted_date, "created": rec.get("createdTime", "")}
+
+    def delete_announcement(self, ann_id: str) -> None:
+        self.announcements.delete(ann_id)
+
+    # daily updates
+    def list_updates(self) -> list[dict]:
+        recs = self.updates.all()
+        out = [{
+            "id": r["id"],
+            "date": r["fields"].get("Date", ""),
+            "note": r["fields"].get("Note", ""),
+            "cohort": r["fields"].get("Cohort", ""),
+            "photos": self._attachments(r["fields"].get("Photos", [])),
+        } for r in recs]
+        return sorted(out, key=lambda u: u["date"], reverse=True)
+
+    def add_update(self, date_iso: str, note: str, cohort: str) -> dict:
+        payload = {"Date": date_iso, "Note": note}
+        if cohort:
+            payload["Cohort"] = cohort
+        rec = self.updates.create(payload)
+        return {"id": rec["id"], "date": date_iso, "note": note, "cohort": cohort, "photos": []}
+
+    def add_update_photos(self, update_id: str, files: list[tuple[str, bytes]]) -> None:
+        for filename, content in files:
+            self.updates.upload_attachment(update_id, "Photos", filename=filename, content=content)
+
+
+# --- Backend selection --------------------------------------------------------
+def get_store(secrets) -> tuple[object, bool]:
+    """Return (store, is_live). Uses Airtable if creds exist, else LocalStore."""
+    try:
+        at = secrets.get("airtable", None)
+    except Exception:
+        at = None
+    if at and at.get("token") and at.get("base_id"):
+        return AirtableStore(at["token"], at["base_id"]), True
+    return LocalStore(), False
