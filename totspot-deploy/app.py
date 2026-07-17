@@ -63,8 +63,20 @@ h1, h2, h3 { font-family: 'Baloo 2', 'Nunito', cursive; color: __INK__; }
 
 header[data-testid="stHeader"] { background: transparent; }
 #MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; }
-.block-container { padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1120px; }
-.stApp { background: __CARD__; }
+
+/* rainbow bar pinned to the very top */
+.stApp::before{content:"";position:fixed;top:0;left:0;right:0;height:6px;z-index:1000;
+  background:linear-gradient(90deg,__CORAL__,__ORANGE__,__YELLOW__,__GREEN__,__TEAL__,__LAVENDER__);}
+
+/* playful polka-dot background */
+.stApp{background-color:#FFFAF6;
+  background-image:radial-gradient(rgba(244,151,142,.18) 2.2px, transparent 2.4px);
+  background-size:26px 26px;}
+
+/* content sits on a clean white "sheet" floating over the dots */
+.block-container{background:#fff;border-radius:1.8rem;padding:2rem 2.3rem 3rem;
+  box-shadow:0 12px 44px rgba(0,0,0,.08);margin-top:1.7rem;margin-bottom:2rem;
+  max-width:1020px;border:1px solid __LINE__;}
 
 .subtitle { text-align: center; color: __MUTED__; font-size: 1.15rem; margin: -.2rem 0 1.2rem; font-weight: 600; }
 .brand { font-family: 'Baloo 2'; font-weight: 800; font-size: 2.6rem; text-align: center; }
@@ -72,9 +84,26 @@ header[data-testid="stHeader"] { background: transparent; }
     font-weight:800; letter-spacing:.2em; font-size:1.3rem; padding:.2rem .8rem; border-radius:.6rem; }
 .pindots { text-align:center; font-size:2.6rem; letter-spacing:.4em; color:__ink__; margin:.4rem 0 1rem; }
 
+/* buttons — brand coral, baked in so they never fall back to Streamlit red */
 div[data-testid="stButton"] > button, div[data-testid="stFormSubmitButton"] > button {
-    border-radius: .9rem; font-weight: 700; font-family: 'Baloo 2';
+    border-radius: 999px; font-weight: 700; font-family: 'Baloo 2';
+    background:#fff; color:__CORAL__; border:2px solid __CORAL__; padding:.5rem 1.25rem;
+    transition:transform .08s ease, box-shadow .08s ease;
 }
+div[data-testid="stButton"] > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+    transform:translateY(-2px); box-shadow:0 6px 16px rgba(244,151,142,.35);
+    border-color:__CORAL__; color:__CORAL__;
+}
+button[kind="primary"], button[kind="primaryFormSubmit"] {
+    background:__CORAL__ !important; color:#fff !important; border-color:__CORAL__ !important;
+    box-shadow:0 4px 14px rgba(244,151,142,.45) !important;
+}
+button[kind="primary"]:hover, button[kind="primaryFormSubmit"]:hover { color:#fff !important; filter:brightness(.96); }
+
+/* rounder inputs + branded tabs */
+.stTextInput input, .stTextArea textarea, .stDateInput input { border-radius:.8rem !important; }
+.stTabs [data-baseweb="tab"] { font-family:'Baloo 2'; font-weight:700; }
+.stTabs [aria-selected="true"] { color:__CORAL__ !important; }
 
 .home-grid { display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center; margin-top: 1.4rem; }
 .home-card {
