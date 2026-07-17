@@ -211,10 +211,18 @@ class LocalStore:
     def add_announcement(self, title: str, message: str, posted_date: str, created: str) -> dict:
         db = self._read()
         rec = {"id": str(uuid.uuid4()), "title": title, "message": message,
-               "posted_date": posted_date, "created": created}
+               "posted_date": posted_date, "created": created, "photos": []}
         db["announcements"].append(rec)
         self._write(db)
         return rec
+
+    def add_announcement_photos(self, ann_id: str, files: list[tuple[str, bytes]]) -> None:
+        db = self._read()
+        for a in db["announcements"]:
+            if a["id"] == ann_id:
+                for filename, content in files:
+                    a.setdefault("photos", []).append(self._save_file(filename, content))
+        self._write(db)
 
     def delete_announcement(self, ann_id: str) -> None:
         db = self._read()
@@ -332,6 +340,7 @@ class AirtableStore:
             "message": r["fields"].get("Message", ""),
             "posted_date": r["fields"].get("Posted Date", ""),
             "created": r.get("createdTime", ""),
+            "photos": self._attachments(r["fields"].get("Photos", [])),
         } for r in recs]
         return sorted(out, key=lambda a: a["created"], reverse=True)
 
@@ -341,6 +350,10 @@ class AirtableStore:
         })
         return {"id": rec["id"], "title": title, "message": message,
                 "posted_date": posted_date, "created": rec.get("createdTime", "")}
+
+    def add_announcement_photos(self, ann_id: str, files: list[tuple[str, bytes]]) -> None:
+        for filename, content in files:
+            self.announcements.upload_attachment(ann_id, "Photos", filename=filename, content=content)
 
     def delete_announcement(self, ann_id: str) -> None:
         self.announcements.delete(ann_id)

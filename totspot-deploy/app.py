@@ -443,16 +443,25 @@ def view_admin():
         with st.form("new_ann", clear_on_submit=True):
             title = st.text_input("Title")
             msg = st.text_area("Message")
-            if st.form_submit_button("📣 Post announcement", type="primary") and (title or msg):
-                now = S.now_local(TZ)
-                store.add_announcement(title.strip(), msg.strip(),
+            ann_photos = st.file_uploader("Photos (optional)", type=["png", "jpg", "jpeg"],
+                                          accept_multiple_files=True)
+            posted = st.form_submit_button("📣 Post announcement", type="primary")
+        if posted and (title or msg):
+            now = S.now_local(TZ)
+            a = store.add_announcement(title.strip(), msg.strip(),
                                        now.strftime("%b ") + str(now.day) + now.strftime(", %Y"), S.stamp(TZ))
-                st.rerun()
+            if ann_photos:
+                store.add_announcement_photos(a["id"], [(f.name, f.getvalue()) for f in ann_photos])
+            st.rerun()
         st.divider()
         for a in store.list_announcements():
             c1, c2 = st.columns([6, 1])
             c1.markdown(f"<div class='post'><div class='when'>{a['posted_date']}</div>"
                         f"<div class='head'>{a['title']}</div>{a['message']}</div>", unsafe_allow_html=True)
+            if a.get("photos"):
+                pc = c1.columns(4)
+                for i, ph in enumerate(a["photos"]):
+                    pc[i % 4].image(ph["url"], width="stretch")
             if c2.button("Delete", key=f"delann_{a['id']}"):
                 store.delete_announcement(a["id"])
                 st.rerun()
@@ -563,6 +572,10 @@ def view_parent():
     for a in anns[:10]:
         st.markdown(f"<div class='post'><div class='when'>{a['posted_date']}</div>"
                     f"<div class='head'>{a['title']}</div>{a['message']}</div>", unsafe_allow_html=True)
+        if a.get("photos"):
+            pcols = st.columns(4)
+            for i, ph in enumerate(a["photos"]):
+                pcols[i % 4].image(ph["url"], width="stretch")
 
     st.markdown("### 🌈 Daily updates")
     updates = [u for u in store.list_updates()

@@ -97,11 +97,28 @@ def ensure_tables():
         print(f"   Table {name!r}: CREATED")
 
 
+def ensure_fields_on(table_name, fields):
+    tbl = next((t for t in base.schema().tables if t.name == table_name), None)
+    if tbl is None:
+        print(f"   !! table {table_name!r} not found")
+        return
+    existing = {f.name for f in tbl.fields}
+    table = base.table(tbl.id)
+    for name, ftype, options in fields:
+        if name in existing:
+            print(f"   {table_name}.{name}: exists, skip")
+            continue
+        table.create_field(name, ftype, options=options)
+        print(f"   {table_name}.{name}: CREATED ({ftype})")
+
+
 try:
     print("\nEnsuring Kids fields...")
     ensure_kids_fields()
     print("\nEnsuring new tables...")
     ensure_tables()
+    print("\nEnsuring Announcements fields...")
+    ensure_fields_on("Announcements", [("Photos", "multipleAttachments", None)])
     print("\nDONE.")
 except Exception as e:
     print("\nERROR:", type(e).__name__, e)
