@@ -65,6 +65,8 @@ KID_FIELDS = {
     "medications": "Medications",
     "authorized_pickups": "Authorized Pickups",
     "pin": "PIN",
+    "gender": "Gender",
+    "school_year": "School Year",
 }
 KID_ATTACH_FIELD = "Enrollment Form"
 KID_PHOTO_FIELD = "Child Photo"

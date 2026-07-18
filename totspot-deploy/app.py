@@ -281,12 +281,16 @@ def view_signup():
     with cols[1]:
         with st.form("signup", clear_on_submit=True, border=True):
             child = st.text_input("Child's name *")
-            birthdate = st.text_input("Child's birthdate (MM/DD/YYYY)")
+            c0a, c0b = st.columns(2)
+            birthdate = c0a.text_input("Child's birthdate (MM/DD/YYYY)")
+            gender = c0b.selectbox("Child's gender", ["", "Male", "Female"])
             parent = st.text_input("Parent / guardian name *")
             c1, c2 = st.columns(2)
             phone = c1.text_input("Phone *")
             email = c2.text_input("Email")
-            cohort = st.selectbox("Preferred cohort", ["No preference"] + COHORT_OPTIONS)
+            c3, c4 = st.columns(2)
+            school_year = c3.selectbox("Desired school year", ["2026-2027", "2027-2028"])
+            cohort = c4.selectbox("Preferred cohort", ["No preference"] + COHORT_OPTIONS)
             notes = st.text_area("Allergies / anything we should know?")
             submitted = st.form_submit_button("Join the waitlist  🎉", width="stretch", type="primary")
         if submitted:
@@ -294,12 +298,22 @@ def view_signup():
                 st.error("Please fill in the required fields (*).")
                 return
             store.add_kid({
-                "name": child.strip(), "birthdate": birthdate.strip(),
+                "name": child.strip(), "birthdate": birthdate.strip(), "gender": gender,
                 "parent_name": parent.strip(), "phone": phone.strip(),
                 "email": email.strip(), "notes": notes.strip(),
+                "school_year": school_year,
                 "cohort": "" if cohort == "No preference" else cohort,
                 "status": "Waitlist", "signup_date": S.today_iso(TZ),
             })
+            notify.send_email(
+                EMAIL_CFG,
+                f"[Tot Spot] New waitlist sign-up: {child.strip()}",
+                (f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
+                 f"Parent: {parent.strip()}\nPhone: {phone.strip()}\nEmail: {email.strip()}\n"
+                 f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
+                 f"Cohort preference: {cohort}\nNotes: {notes.strip() or '—'}\n\n"
+                 f"Open Admin → Waitlist to review."),
+            )
             st.success(f"Thanks! **{child}** has been added to the waitlist. 🎉")
             st.balloons()
 
@@ -328,6 +342,11 @@ def profile_fields(k: dict, prefix: str) -> dict:
     c1, c2 = st.columns(2)
     birthdate = c1.text_input("Birthday (MM/DD/YYYY)", k["birthdate"], key=f"{prefix}bd")
     c2.text_input("Age", compute_age(birthdate, now) or "—", disabled=True, key=f"{prefix}age")
+    cg1, cg2 = st.columns(2)
+    gender = cg1.selectbox("Gender", ["", "Male", "Female"],
+                           index=_idx(["", "Male", "Female"], k["gender"]), key=f"{prefix}gn")
+    school_year = cg2.selectbox("School year", ["", "2026-2027", "2027-2028"],
+                                index=_idx(["", "2026-2027", "2027-2028"], k["school_year"]), key=f"{prefix}sy")
     address = st.text_input("Address", k["address"], key=f"{prefix}ad")
     c3, c4 = st.columns(2)
     mother = c3.text_input("Mother name", k["mother_name"], key=f"{prefix}mn")
@@ -349,7 +368,7 @@ def profile_fields(k: dict, prefix: str) -> dict:
     physician = c11.text_input("Doctor", k["physician"], key=f"{prefix}phy")
     physician_ph = c12.text_input("Doctor phone", k["physician_phone"], key=f"{prefix}phyp")
     return {
-        "birthdate": birthdate, "address": address,
+        "birthdate": birthdate, "gender": gender, "school_year": school_year, "address": address,
         "mother_name": mother, "mother_phone": mother_ph,
         "father_name": father, "father_phone": father_ph, "email": email,
         "emergency1": e1, "emergency1_phone": e1p,
