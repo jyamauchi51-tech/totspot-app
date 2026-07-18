@@ -279,17 +279,29 @@ def view_signup():
     banner()
     cols = st.columns([1, 3, 1])
     with cols[1]:
+        num_parents = st.selectbox("How many parents / guardians?", [1, 2], key="signup_np")
         with st.form("signup", clear_on_submit=True, border=True):
             child = st.text_input("Child's name *")
             c0a, c0b = st.columns(2)
             birthdate = c0a.text_input("Child's birthdate (MM/DD/YYYY)")
             gender = c0b.selectbox("Child's gender", ["", "Male", "Female"])
-            parent = st.text_input("Parent / guardian name *")
+
+            st.markdown("**Parent / guardian 1**")
+            parent = st.text_input("Name *", key="p1n")
             c1, c2 = st.columns(2)
-            phone = c1.text_input("Phone *")
-            email = c2.text_input("Email")
+            phone = c1.text_input("Phone *", key="p1p")
+            email = c2.text_input("Email", key="p1e")
+
+            parent2 = parent2_phone = parent2_email = ""
+            if num_parents == 2:
+                st.markdown("**Parent / guardian 2**")
+                parent2 = st.text_input("Name", key="p2n")
+                c2a, c2b = st.columns(2)
+                parent2_phone = c2a.text_input("Phone", key="p2p")
+                parent2_email = c2b.text_input("Email", key="p2e")
+
             c3, c4 = st.columns(2)
-            school_year = c3.selectbox("Desired school year", ["2026-2027", "2027-2028"])
+            school_year = c3.selectbox("Desired school year", ["2026-2027", "2027-2028", "2028-2029"])
             cohort = c4.selectbox("Preferred cohort", ["No preference"] + COHORT_OPTIONS)
             notes = st.text_area("Allergies / anything we should know?")
             submitted = st.form_submit_button("Join the waitlist  🎉", width="stretch", type="primary")
@@ -299,17 +311,21 @@ def view_signup():
                 return
             store.add_kid({
                 "name": child.strip(), "birthdate": birthdate.strip(), "gender": gender,
-                "parent_name": parent.strip(), "phone": phone.strip(),
-                "email": email.strip(), "notes": notes.strip(),
-                "school_year": school_year,
+                "parent_name": parent.strip(), "phone": phone.strip(), "email": email.strip(),
+                "parent2_name": parent2.strip(), "parent2_phone": parent2_phone.strip(),
+                "parent2_email": parent2_email.strip(),
+                "notes": notes.strip(), "school_year": school_year,
                 "cohort": "" if cohort == "No preference" else cohort,
                 "status": "Waitlist", "signup_date": S.today_iso(TZ),
             })
+            p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, {parent2_email.strip()})\n"
+                       if parent2.strip() else "")
             notify.send_email(
                 EMAIL_CFG,
                 f"[Tot Spot] New waitlist sign-up: {child.strip()}",
                 (f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
-                 f"Parent: {parent.strip()}\nPhone: {phone.strip()}\nEmail: {email.strip()}\n"
+                 f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
+                 f"{p2_line}"
                  f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
                  f"Cohort preference: {cohort}\nNotes: {notes.strip() or '—'}\n\n"
                  f"Open Admin → Waitlist to review."),
@@ -345,16 +361,20 @@ def profile_fields(k: dict, prefix: str) -> dict:
     cg1, cg2 = st.columns(2)
     gender = cg1.selectbox("Gender", ["", "Male", "Female"],
                            index=_idx(["", "Male", "Female"], k["gender"]), key=f"{prefix}gn")
-    school_year = cg2.selectbox("School year", ["", "2026-2027", "2027-2028"],
-                                index=_idx(["", "2026-2027", "2027-2028"], k["school_year"]), key=f"{prefix}sy")
+    school_year = cg2.selectbox("School year", ["", "2026-2027", "2027-2028", "2028-2029"],
+                                index=_idx(["", "2026-2027", "2027-2028", "2028-2029"], k["school_year"]),
+                                key=f"{prefix}sy")
     address = st.text_input("Address", k["address"], key=f"{prefix}ad")
-    c3, c4 = st.columns(2)
-    mother = c3.text_input("Mother name", k["mother_name"], key=f"{prefix}mn")
-    mother_ph = c4.text_input("Mother phone", k["mother_phone"], key=f"{prefix}mp")
-    c5, c6 = st.columns(2)
-    father = c5.text_input("Father name", k["father_name"], key=f"{prefix}fn")
-    father_ph = c6.text_input("Father phone", k["father_phone"], key=f"{prefix}fp")
-    email = st.text_input("Email", k["email"], key=f"{prefix}em")
+    st.markdown("**Parent / guardian 1**")
+    p1n = st.text_input("Name", k["parent_name"], key=f"{prefix}p1n")
+    cp1, cp2 = st.columns(2)
+    p1p = cp1.text_input("Phone", k["phone"], key=f"{prefix}p1p")
+    p1e = cp2.text_input("Email", k["email"], key=f"{prefix}p1e")
+    st.markdown("**Parent / guardian 2**")
+    p2n = st.text_input("Name", k["parent2_name"], key=f"{prefix}p2n")
+    cp3, cp4 = st.columns(2)
+    p2p = cp3.text_input("Phone", k["parent2_phone"], key=f"{prefix}p2p")
+    p2e = cp4.text_input("Email", k["parent2_email"], key=f"{prefix}p2e")
     c7, c8 = st.columns(2)
     e1 = c7.text_input("Emergency contact 1", k["emergency1"], key=f"{prefix}e1")
     e1p = c8.text_input("Phone", k["emergency1_phone"], key=f"{prefix}e1p")
@@ -369,8 +389,8 @@ def profile_fields(k: dict, prefix: str) -> dict:
     physician_ph = c12.text_input("Doctor phone", k["physician_phone"], key=f"{prefix}phyp")
     return {
         "birthdate": birthdate, "gender": gender, "school_year": school_year, "address": address,
-        "mother_name": mother, "mother_phone": mother_ph,
-        "father_name": father, "father_phone": father_ph, "email": email,
+        "parent_name": p1n, "phone": p1p, "email": p1e,
+        "parent2_name": p2n, "parent2_phone": p2p, "parent2_email": p2e,
         "emergency1": e1, "emergency1_phone": e1p,
         "emergency2": e2, "emergency2_phone": e2p,
         "authorized_pickups": pickups, "notes": allergies, "medications": medications,
