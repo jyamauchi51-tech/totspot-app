@@ -19,7 +19,7 @@ import store as S
 
 st.set_page_config(page_title="The Tot Spot", page_icon="🐛", layout="wide")
 
-LOGO_PATH = Path("assets/logo.png")
+LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"  # load next to app.py
 COHORT_OPTIONS = ["Mon/Wed", "Tues/Thurs", "Full-Time"]
 
 
