@@ -65,6 +65,11 @@ KID_FIELDS = {
     "medications": "Medications",
     "authorized_pickups": "Authorized Pickups",
     "pin": "PIN",
+    "gender": "Gender",
+    "school_year": "School Year",
+    "parent2_name": "Parent 2 Name",
+    "parent2_phone": "Parent 2 Phone",
+    "parent2_email": "Parent 2 Email",
 }
 KID_ATTACH_FIELD = "Enrollment Form"
 KID_PHOTO_FIELD = "Child Photo"
@@ -162,6 +167,12 @@ class LocalStore:
         for k in db["kids"]:
             if k["id"] == kid_id:
                 k.update(data)
+        self._write(db)
+
+    def delete_kid(self, kid_id: str) -> None:
+        db = self._read()
+        db["kids"] = [k for k in db["kids"] if k["id"] != kid_id]
+        db["checkins"] = [c for c in db["checkins"] if c.get("kid_id") != kid_id]
         self._write(db)
 
     def upload_enrollment_form(self, kid_id: str, filename: str, content: bytes) -> None:
@@ -299,14 +310,17 @@ class AirtableStore:
     def add_kid(self, data: dict) -> dict:
         payload = {KID_FIELDS[k]: v for k, v in data.items()
                    if k in KID_FIELDS and v not in (None, "")}
-        return self._kid_from_record(self.kids.create(payload))
+        return self._kid_from_record(self.kids.create(payload, typecast=True))
 
     def update_kid_status(self, kid_id: str, status: str) -> None:
         self.kids.update(kid_id, {KID_FIELDS["status"]: status})
 
     def update_kid(self, kid_id: str, data: dict) -> None:
         payload = {KID_FIELDS[k]: v for k, v in data.items() if k in KID_FIELDS}
-        self.kids.update(kid_id, payload)
+        self.kids.update(kid_id, payload, typecast=True)
+
+    def delete_kid(self, kid_id: str) -> None:
+        self.kids.delete(kid_id)
 
     def upload_enrollment_form(self, kid_id: str, filename: str, content: bytes) -> None:
         self.kids.upload_attachment(kid_id, KID_ATTACH_FIELD, filename=filename, content=content)
