@@ -169,6 +169,12 @@ class LocalStore:
                 k.update(data)
         self._write(db)
 
+    def delete_kid(self, kid_id: str) -> None:
+        db = self._read()
+        db["kids"] = [k for k in db["kids"] if k["id"] != kid_id]
+        db["checkins"] = [c for c in db["checkins"] if c.get("kid_id") != kid_id]
+        self._write(db)
+
     def upload_enrollment_form(self, kid_id: str, filename: str, content: bytes) -> None:
         self._append_attachment(kid_id, "enrollment_form", filename, content)
 
@@ -312,6 +318,9 @@ class AirtableStore:
     def update_kid(self, kid_id: str, data: dict) -> None:
         payload = {KID_FIELDS[k]: v for k, v in data.items() if k in KID_FIELDS}
         self.kids.update(kid_id, payload, typecast=True)
+
+    def delete_kid(self, kid_id: str) -> None:
+        self.kids.delete(kid_id)
 
     def upload_enrollment_form(self, kid_id: str, filename: str, content: bytes) -> None:
         self.kids.upload_attachment(kid_id, KID_ATTACH_FIELD, filename=filename, content=content)
