@@ -9,6 +9,8 @@ Views chosen by the ?view= URL parameter:
   (no param)    -> home page with links
 """
 
+import base64
+import io
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +22,16 @@ import store as S
 st.set_page_config(page_title="The Tot Spot", page_icon="🐛", layout="wide")
 
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"  # load next to app.py
+
+
+def _logo_data_uri() -> str:
+    try:
+        return "data:image/png;base64," + base64.b64encode(LOGO_PATH.read_bytes()).decode()
+    except Exception:
+        return ""
+
+
+LOGO_URI = _logo_data_uri()
 COHORT_OPTIONS = ["Mon/Wed", "Tues/Thurs", "Full-Time"]
 
 
@@ -132,6 +144,24 @@ div[data-testid="stMetric"] { background: __CARD__; border: 2px solid __LINE__; 
 .post .when { color: __MUTED__; font-weight: 700; font-size: .9rem; }
 .post .head { font-family:'Baloo 2'; font-weight: 800; font-size: 1.25rem; margin: .1rem 0 .3rem; }
 .contactbox { background:__teal_bg__; border-radius:1.1rem; padding:1rem 1.2rem; }
+
+/* cute student ID card */
+.idcard{max-width:470px;margin:.4rem auto 1.4rem;background:#fff;border-radius:1.4rem;overflow:hidden;
+  box-shadow:0 12px 32px rgba(0,0,0,.15);border:1px solid __LINE__;}
+.idbar{height:8px;background:linear-gradient(90deg,__CORAL__,__ORANGE__,__YELLOW__,__GREEN__,__TEAL__,__LAVENDER__);}
+.idtop{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem .2rem;}
+.idlogo{height:34px;width:auto;}
+.idtag{background:__CORAL__;color:#fff;font-family:'Baloo 2';font-weight:800;font-size:.72rem;
+  letter-spacing:.12em;padding:.28rem .7rem;border-radius:999px;}
+.idbody{display:flex;gap:1rem;padding:.5rem 1rem 1rem;align-items:center;}
+.idphoto{width:124px;height:124px;object-fit:cover;border-radius:1rem;border:4px solid __YELLOW__;flex:0 0 auto;}
+.idname{font-family:'Baloo 2';font-weight:800;font-size:1.5rem;color:__INK__;line-height:1.1;margin-bottom:.25rem;}
+.idrow{font-size:.98rem;color:__INK__;margin:.08rem 0;}
+.idrow b{color:__MUTED__;font-weight:800;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;
+  margin-right:.4rem;display:inline-block;min-width:78px;}
+.idnum{margin-top:.45rem;font-family:'Baloo 2';font-weight:800;color:__CORAL__;letter-spacing:.05em;}
+.idfoot{background:__CORAL_BG__;text-align:center;padding:.5rem;font-family:'Baloo 2';font-weight:700;
+  color:__INK__;font-size:.9rem;}
 </style>
 """
 
@@ -184,6 +214,62 @@ def compute_age(birthdate: str, now) -> str:
     if years <= 0:
         return f"{rem} months"
     return f"{years} yr {rem} mo" if rem else f"{years} years"
+
+
+def id_card_html(k: dict, now) -> str:
+    """A cute 'Student ID' card for the family portal (shown once a photo exists)."""
+    photo = k["child_photo"][0]["url"] if k["child_photo"] else ""
+    age = compute_age(k["birthdate"], now)
+    bday = k["birthdate"] or "—"
+    if age:
+        bday = f"{bday} · {age}"
+    parents = " & ".join(p for p in [k["parent_name"], k["parent2_name"]] if p) or "—"
+    sid = k["pin"] or "----"
+    return f"""
+    <div class="idcard">
+      <div class="idbar"></div>
+      <div class="idtop"><img src="{LOGO_URI}" class="idlogo"/><span class="idtag">STUDENT ID</span></div>
+      <div class="idbody">
+        <img src="{photo}" class="idphoto"/>
+        <div class="idfields">
+          <div class="idname">{k['name']}</div>
+          <div class="idrow"><b>Birthday</b>{bday}</div>
+          <div class="idrow"><b>Gender</b>{k['gender'] or '—'}</div>
+          <div class="idrow"><b>Cohort</b>{k['cohort'] or '—'}</div>
+          <div class="idrow"><b>Year</b>{k['school_year'] or '—'}</div>
+          <div class="idrow"><b>Grown-ups</b>{parents}</div>
+          <div class="idnum">★ Student #{sid} ★</div>
+        </div>
+      </div>
+      <div class="idfoot">The Tot Spot · Preschool Prep · Little Learner 🌈</div>
+    </div>
+    """
+
+
+def child_photo_uploader(k: dict, key_prefix: str):
+    """Upload a photo and crop it to the child's face before saving."""
+    up = st.file_uploader("Upload / change photo", type=["png", "jpg", "jpeg"],
+                          key=f"{key_prefix}up_{k['id']}")
+    if up is None:
+        return
+    try:
+        from streamlit_cropper import st_cropper
+        from PIL import Image
+    except Exception:  # cropper unavailable -> save uncropped
+        if st.button("💾 Save photo", key=f"{key_prefix}save_{k['id']}", type="primary"):
+            store.set_child_photo(k["id"], up.name, up.getvalue())
+            st.rerun()
+        return
+    st.caption("Drag & resize the box to crop to your child's face 🙂")
+    cropped = st_cropper(Image.open(up), box_color="#F4978E", aspect_ratio=(1, 1),
+                         realtime_update=True, key=f"{key_prefix}crop_{k['id']}")
+    st.image(cropped, width=150, caption="Preview")
+    if st.button("💾 Save photo", key=f"{key_prefix}save_{k['id']}", type="primary"):
+        buf = io.BytesIO()
+        cropped.convert("RGB").save(buf, format="JPEG", quality=88)
+        store.set_child_photo(k["id"], f"{k['name'] or 'child'}.jpg", buf.getvalue())
+        st.success("Photo saved!")
+        st.rerun()
 
 
 def enrolled_by_pin(pin: str) -> list[dict]:
@@ -401,6 +487,7 @@ def profile_fields(k: dict, prefix: str) -> dict:
 def admin_profile_editor(k: dict):
     if k["child_photo"]:
         st.image(k["child_photo"][0]["url"], width=140)
+    child_photo_uploader(k, "a")
     with st.form(f"prof_{k['id']}"):
         cohort = st.selectbox("Cohort", [""] + COHORT_OPTIONS,
                               index=_idx([""] + COHORT_OPTIONS, k["cohort"]), key=f"co_{k['id']}")
@@ -417,7 +504,6 @@ def admin_profile_editor(k: dict):
             c15, c16 = st.columns(2)
             insurance = c15.text_input("Insurance", k["insurance"], key=f"ins_{k['id']}")
             policy = c16.text_input("Policy #", k["policy_number"], key=f"pol_{k['id']}")
-        photo = st.file_uploader("Child photo", type=["png", "jpg", "jpeg"], key=f"ph_{k['id']}")
         scan = st.file_uploader("Signed paper form (photo/PDF)",
                                 type=["png", "jpg", "jpeg", "pdf"], key=f"sc_{k['id']}")
         saved = st.form_submit_button("💾 Save profile", type="primary")
@@ -426,8 +512,6 @@ def admin_profile_editor(k: dict):
                      "hospital": hospital, "hospital_phone": hospital_ph,
                      "insurance": insurance, "policy_number": policy})
         store.update_kid(k["id"], vals)
-        if photo is not None:
-            store.set_child_photo(k["id"], photo.name, photo.getvalue())
         if scan is not None:
             store.upload_enrollment_form(k["id"], scan.name, scan.getvalue())
         st.success("Saved.")
@@ -470,7 +554,7 @@ def view_admin():
         if not waitlist:
             st.write("No one on the waitlist.")
         for pos, k in enumerate(waitlist, 1):
-            c1, c2 = st.columns([5, 1])
+            c1, c2, c3 = st.columns([5, 1, 1])
             pref = f" · prefers {k['cohort']}" if k["cohort"] else ""
             c1.markdown(f"**{pos}. {k['name']}** — {k['parent_name']} · {k['phone']} · {k['signup_date']}{pref}"
                         + (f"  \n_{k['notes']}_" if k["notes"] else ""))
@@ -478,6 +562,11 @@ def view_admin():
                 store.update_kid_status(k["id"], "Enrolled")
                 assign_pin(k["id"])
                 st.rerun()
+            with c3.popover("Remove", width="stretch"):
+                st.write(f"Permanently delete **{k['name']}** from the waitlist?")
+                if st.button("Yes, delete", key=f"delwait_{k['id']}", type="primary"):
+                    store.delete_kid(k["id"])
+                    st.rerun()
 
     with t_kids:
         if not enrolled:
@@ -586,16 +675,14 @@ def contact_and_handbook():
 
 def parent_profile_form(k: dict):
     st.markdown(f"### 👶 {k['name']}'s profile")
-    if k["child_photo"]:
-        st.image(k["child_photo"][0]["url"], width=160)
+    if not k["child_photo"]:
+        st.caption("📸 Add a photo below to unlock your child's Student ID card!")
+    child_photo_uploader(k, "p")
     with st.form(f"pp_{k['id']}"):
         vals = profile_fields(k, prefix=f"p_{k['id']}_")
-        photo = st.file_uploader("Update photo", type=["png", "jpg", "jpeg"], key=f"pph_{k['id']}")
         saved = st.form_submit_button("💾 Save my changes", type="primary")
     if saved:
         store.update_kid(k["id"], vals)
-        if photo is not None:
-            store.set_child_photo(k["id"], photo.name, photo.getvalue())
         ok, _ = notify.send_email(
             EMAIL_CFG,
             f"[Tot Spot] {k['name']}'s profile was updated",
@@ -659,6 +746,8 @@ def view_parent():
                 pcols[i % 4].image(ph["url"], width="stretch")
 
     for k in kids:
+        if k["child_photo"]:
+            st.markdown(id_card_html(k, S.now_local(TZ)), unsafe_allow_html=True)
         parent_profile_form(k)
 
     contact_and_handbook()
