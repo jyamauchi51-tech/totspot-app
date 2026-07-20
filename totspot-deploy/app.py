@@ -94,7 +94,7 @@ header[data-testid="stHeader"] { background: transparent; }
 .brand { font-family: 'Baloo 2'; font-weight: 800; font-size: 2.6rem; text-align: center; }
 .codechip { display:inline-block; background:__lavender_bg__; color:__ink__; font-family:'Baloo 2';
     font-weight:800; letter-spacing:.2em; font-size:1.3rem; padding:.2rem .8rem; border-radius:.6rem; }
-.pindots { text-align:center; font-size:2.6rem; letter-spacing:.4em; color:__ink__; margin:.4rem 0 1rem; }
+.pindots { text-align:center; font-size:2rem; letter-spacing:.35em; color:__coral__; margin:.2rem 0 .5rem; }
 
 /* buttons — brand coral, baked in so they never fall back to Streamlit red */
 div[data-testid="stButton"] > button, div[data-testid="stFormSubmitButton"] > button {
@@ -132,8 +132,8 @@ button[kind="primary"]:hover, button[kind="primaryFormSubmit"]:hover { color:#ff
 .c-lav { background: __LAVENDER_BG__; } .c-teal { background: __TEAL_BG__; }
 
 div[class*="st-key-kp_"] button {
-    height: 4.6rem; font-size: 1.7rem; border-radius: 1rem; font-family:'Baloo 2';
-    border: 2px solid __LINE__;
+    height: 3.1rem; font-size: 1.35rem; border-radius: .8rem; font-family:'Baloo 2';
+    border: 2px solid __LINE__; padding:.2rem;
 }
 .bigcard { border:3px solid __LINE__; border-radius:1.6rem; padding:1.5rem; text-align:center;
     box-shadow:0 4px 14px rgba(0,0,0,.06); }
@@ -173,13 +173,14 @@ def css() -> str:
     return s
 
 
-def logo_header():
-    cols = st.columns([1, 3, 1])
-    with cols[1]:
-        if LOGO_PATH.exists():
-            st.image(str(LOGO_PATH), width="stretch")
-        else:
-            st.markdown("<div class='brand'>🐛 The Tot Spot</div>", unsafe_allow_html=True)
+def logo_header(max_width: int = 440):
+    if LOGO_URI:
+        st.markdown(
+            f"<div style='text-align:center'><img src='{LOGO_URI}' "
+            f"style='width:78%;max-width:{max_width}px;margin:.1rem auto .3rem;display:inline-block'/></div>",
+            unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='brand'>🐛 The Tot Spot</div>", unsafe_allow_html=True)
 
 
 def banner():
@@ -286,7 +287,7 @@ def assign_pin(kid_id: str):
 # ------------------------------------------------------------------ KIOSK (PIN)
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
-    logo_header()
+    logo_header(max_width=230)
     now = S.now_local(TZ)
     st.markdown(f"<div class='subtitle'>Check-in &middot; {now.strftime('%A, %B ')}{now.day}</div>",
                 unsafe_allow_html=True)
