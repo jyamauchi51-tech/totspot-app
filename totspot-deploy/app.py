@@ -32,6 +32,54 @@ def _logo_data_uri() -> str:
 
 
 LOGO_URI = _logo_data_uri()
+
+_PWA_DONE = False
+
+
+def inject_pwa():
+    """Make the app installable (Add to Home Screen -> full-screen app).
+    Writes a manifest + icons into Streamlit's static dir and patches <head>."""
+    global _PWA_DONE
+    if _PWA_DONE:
+        return
+    try:
+        import json
+        import shutil
+
+        static = Path(st.__file__).parent / "static"
+        assets = LOGO_PATH.parent
+        for name in ("app-icon-192.png", "app-icon-512.png", "apple-touch-icon.png"):
+            src = assets / name
+            if src.exists():
+                shutil.copy(src, static / name)
+        manifest = {
+            "name": "The Tot Spot", "short_name": "Tot Spot",
+            "start_url": ".", "display": "standalone",
+            "background_color": "#FFFAF6", "theme_color": "#F4978E",
+            "icons": [
+                {"src": "./app-icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "./app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            ],
+        }
+        (static / "manifest.json").write_text(json.dumps(manifest))
+        idx = static / "index.html"
+        html = idx.read_text(encoding="utf-8")
+        if "manifest.json" not in html:
+            tags = (
+                '<link rel="manifest" href="./manifest.json">'
+                '<meta name="apple-mobile-web-app-capable" content="yes">'
+                '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
+                '<meta name="apple-mobile-web-app-title" content="The Tot Spot">'
+                '<link rel="apple-touch-icon" href="./apple-touch-icon.png">'
+                '<meta name="theme-color" content="#F4978E">'
+            )
+            idx.write_text(html.replace("<head>", "<head>" + tags, 1), encoding="utf-8")
+        _PWA_DONE = True
+    except Exception:
+        pass
+
+
+inject_pwa()
 COHORT_OPTIONS = ["Mon/Wed", "Tues/Thurs", "Full-Time"]
 
 
