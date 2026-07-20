@@ -173,9 +173,12 @@ button[kind="primary"]:hover, button[kind="primaryFormSubmit"]:hover { color:#ff
 .c-lav { background: __LAVENDER_BG__; } .c-teal { background: __TEAL_BG__; }
 
 div[class*="st-key-kp_"] button {
-    height: 3.1rem; font-size: 1.35rem; border-radius: .8rem; font-family:'Baloo 2';
-    border: 2px solid __LINE__; padding:.2rem;
+    height: 3.5rem; font-size: 1.55rem; border-radius: .9rem; font-family:'Baloo 2';
+    background: __coral_bg__ !important; color: __ink__ !important;
+    border: 2px solid __coral__ !important; box-shadow: 0 2px 6px rgba(0,0,0,.10); padding:.2rem;
 }
+div[class*="st-key-kp_"] button:hover { background:#fff !important; color:__coral__ !important; }
+div[class*="st-key-kp_"] button:active { transform: scale(.96); }
 .bigcard { border:3px solid __LINE__; border-radius:1.6rem; padding:1.5rem; text-align:center;
     box-shadow:0 4px 14px rgba(0,0,0,.06); }
 
