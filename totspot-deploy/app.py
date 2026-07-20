@@ -19,7 +19,9 @@ import streamlit as st
 import notify
 import store as S
 
-st.set_page_config(page_title="The Tot Spot", page_icon="🐛", layout="wide")
+_ICON192 = Path(__file__).resolve().parent / "assets" / "app-icon-192.png"
+st.set_page_config(page_title="The Tot Spot",
+                   page_icon=str(_ICON192) if _ICON192.exists() else "🐛", layout="wide")
 
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"  # load next to app.py
 
@@ -52,6 +54,9 @@ def inject_pwa():
             src = assets / name
             if src.exists():
                 shutil.copy(src, static / name)
+        # overwrite Streamlit's own red favicon so nothing red remains
+        if (assets / "app-icon-192.png").exists():
+            shutil.copy(assets / "app-icon-192.png", static / "favicon.png")
         manifest = {
             "name": "The Tot Spot", "short_name": "Tot Spot",
             "start_url": ".", "display": "standalone",
