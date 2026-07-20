@@ -45,40 +45,28 @@ def inject_pwa():
     if _PWA_DONE:
         return
     try:
-        import json
-        import shutil
+        import re
 
-        static = Path(st.__file__).parent / "static"
-        assets = LOGO_PATH.parent
-        for name in ("app-icon-192.png", "app-icon-512.png", "apple-touch-icon.png"):
-            src = assets / name
-            if src.exists():
-                shutil.copy(src, static / name)
-        # overwrite Streamlit's own red favicon so nothing red remains
-        if (assets / "app-icon-192.png").exists():
-            shutil.copy(assets / "app-icon-192.png", static / "favicon.png")
-        manifest = {
-            "name": "The Tot Spot", "short_name": "Tot Spot",
-            "start_url": ".", "display": "standalone",
-            "background_color": "#FFFAF6", "theme_color": "#F4978E",
-            "icons": [
-                {"src": "./app-icon-192.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "./app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-            ],
-        }
-        (static / "manifest.json").write_text(json.dumps(manifest))
-        idx = static / "index.html"
+        # Icons + manifest are hosted on the Netlify site (served cleanly, with
+        # no Streamlit auth-cookie bounce that would otherwise return a red icon).
+        site = "https://tubular-sawine-ac3d51.netlify.app"
+        idx = Path(st.__file__).parent / "static" / "index.html"
         html = idx.read_text(encoding="utf-8")
-        if "manifest.json" not in html:
+        if "tot-spot-pwa" not in html:
+            # remove Streamlit's own icon/manifest links so ours win
+            html = re.sub(r'<link[^>]*rel="(shortcut icon|icon|apple-touch-icon|manifest)"[^>]*>',
+                          "", html)
             tags = (
-                '<link rel="manifest" href="./manifest.json">'
+                "<!--tot-spot-pwa-->"
+                f'<link rel="manifest" href="{site}/manifest.json">'
+                f'<link rel="apple-touch-icon" href="{site}/apple-touch-icon.png">'
+                f'<link rel="icon" type="image/png" href="{site}/app-icon-192.png">'
                 '<meta name="apple-mobile-web-app-capable" content="yes">'
                 '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
                 '<meta name="apple-mobile-web-app-title" content="The Tot Spot">'
-                '<link rel="apple-touch-icon" href="./apple-touch-icon.png">'
                 '<meta name="theme-color" content="#F4978E">'
             )
-            idx.write_text(html.replace("<head>", "<head>" + tags, 1), encoding="utf-8")
+            idx.write_text(html.replace("</head>", tags + "</head>", 1), encoding="utf-8")
         _PWA_DONE = True
     except Exception:
         pass
