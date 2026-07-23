@@ -206,6 +206,32 @@ div[data-testid="stMetric"] { background: __CARD__; border: 2px solid __LINE__; 
 .idnum{margin-top:.45rem;font-family:'Baloo 2';font-weight:800;color:__CORAL__;letter-spacing:.05em;}
 .idfoot{background:__CORAL_BG__;text-align:center;padding:.5rem;font-family:'Baloo 2';font-weight:700;
   color:__INK__;font-size:.9rem;}
+
+/* daily-report chips */
+.chip{display:inline-block;background:__teal_bg__;color:__ink__;border-radius:999px;
+  padding:.15rem .65rem;margin:.15rem .25rem 0 0;font-weight:700;font-size:.85rem;}
+.chip.snack{background:__yellow_bg__;} .chip.mood{background:__coral_bg__;} .chip.potty{background:__lavender_bg__;}
+.rep{border:2px solid __line__;border-radius:1rem;padding:.8rem 1rem;margin-bottom:.8rem;background:#fff;}
+.rep h4{font-family:'Baloo 2';margin:0 0 .2rem;}
+.rep .lbl{font-weight:800;color:__muted__;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;margin-top:.5rem;}
+
+/* scrapbook */
+.scrapbook{background:#fff;border-radius:1rem;padding:1rem .5rem;}
+.sb-title{font-family:'Baloo 2';text-align:center;font-size:1.8rem;margin:.2rem 0 1rem;}
+.sb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1rem;}
+.sb-card{border:1px solid __line__;border-radius:.8rem;overflow:hidden;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.08);}
+.sb-card img{width:100%;height:190px;object-fit:cover;display:block;}
+.sb-cap{padding:.5rem .7rem;font-weight:600;font-size:.95rem;}
+.sb-foot{display:flex;justify-content:flex-end;align-items:center;gap:.5rem;margin-top:1rem;padding-right:.5rem;}
+.sb-foot img{height:34px;width:auto;} .sb-foot span{font-family:'Baloo 2';color:__muted__;font-size:.8rem;}
+
+@media print{
+  [data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stSidebar"],
+  .stTabs [data-baseweb="tab-list"], div[data-testid="stButton"], .no-print{display:none !important;}
+  .stApp::before{display:none !important;}
+  .stApp,.block-container{background:#fff !important;box-shadow:none !important;border:none !important;padding:0 !important;}
+  .sb-card{break-inside:avoid;}
+}
 </style>
 """
 
@@ -590,9 +616,9 @@ def view_admin():
     m2.metric("Enrolled", len(enrolled))
     m3.metric("Here today", here_now)
 
-    t_wait, t_kids, t_today, t_ann, t_upd = st.tabs(
+    t_wait, t_kids, t_today, t_logs, t_ann, t_upd, t_album = st.tabs(
         [f"Waitlist ({len(waitlist)})", f"Children ({len(enrolled)})",
-         "Today", "Announcements", "Daily Update"]
+         "Today", "Daily Logs", "Announcements", "Daily Update", "Album"]
     )
 
     with t_wait:
@@ -640,6 +666,34 @@ def view_admin():
             st.dataframe([{"Child": name_by_id.get(c["kid_id"], "?"), "In": c["check_in"],
                            "Out": c["check_out"] or "—"} for c in todays],
                          width="stretch", hide_index=True)
+
+    with t_logs:
+        st.caption(f"Per-child daily report for {date_iso}")
+        if not enrolled:
+            st.write("No enrolled children yet.")
+        for k in enrolled:
+            existing = store.get_daily_log(k["id"], date_iso) or {}
+            with st.expander(f"{k['name']}" + (f"  ·  {k['cohort']}" if k["cohort"] else "")):
+                with st.form(f"log_{k['id']}"):
+                    pt = st.multiselect("Potty type", S.POTTY_TYPE,
+                                        default=existing.get("potty_type", []), key=f"pt_{k['id']}")
+                    pp = st.multiselect("Potty progress", S.POTTY_PROGRESS,
+                                        default=existing.get("potty_progress", []), key=f"pp_{k['id']}")
+                    snack = st.selectbox("Snack", ["", *S.SNACK],
+                                         index=_idx(["", *S.SNACK], existing.get("snack", "")),
+                                         key=f"sn_{k['id']}")
+                    mood = st.multiselect("Mood", S.MOOD,
+                                          default=existing.get("mood", []), key=f"mo_{k['id']}")
+                    behavior = st.text_area("Behavior notes", existing.get("behavior", ""),
+                                            key=f"bh_{k['id']}")
+                    injury = st.text_area("Injury report", existing.get("injury", ""),
+                                          key=f"inj_{k['id']}")
+                    if st.form_submit_button("💾 Save daily report", type="primary"):
+                        store.upsert_daily_log(k["id"], date_iso, {
+                            "potty_type": pt, "potty_progress": pp, "snack": snack,
+                            "mood": mood, "behavior": behavior.strip(), "injury": injury.strip()})
+                        st.success("Saved!")
+                        st.rerun()
 
     with t_ann:
         with st.form("new_ann", clear_on_submit=True):
@@ -695,6 +749,39 @@ def view_admin():
                 for i, ph in enumerate(u["photos"]):
                     pcols[i % 4].image(ph["url"], width="stretch")
 
+    with t_album:
+        st.caption("Add photos + captions to a child's scrapbook (parents can print it).")
+        kmap = {k["name"]: k["id"] for k in enrolled}
+        if kmap:
+            with st.form("album_add", clear_on_submit=True):
+                who = st.selectbox("Child", list(kmap.keys()))
+                cap = st.text_input("Caption")
+                aphoto = st.file_uploader("Photo", type=["png", "jpg", "jpeg"])
+                if st.form_submit_button("📖 Add to scrapbook", type="primary") and aphoto:
+                    store.add_album_photo(kmap[who], date_iso, cap.strip(),
+                                          aphoto.name, aphoto.getvalue())
+                    st.success("Added!")
+                    st.rerun()
+        else:
+            st.write("No enrolled children yet.")
+        st.divider()
+        for k in enrolled:
+            items = store.list_album(k["id"])
+            if not items:
+                continue
+            total = sum(len(it["photos"]) for it in items)
+            st.markdown(f"**{k['name']}** — {total} photo(s)")
+            cols = st.columns(4)
+            i = 0
+            for it in items:
+                for ph in it["photos"]:
+                    with cols[i % 4]:
+                        st.image(ph["url"], caption=it.get("caption") or "", width="stretch")
+                        if st.button("🗑 Delete", key=f"delalb_{it['id']}"):
+                            store.delete_album_photo(it["id"])
+                            st.rerun()
+                    i += 1
+
 
 # ------------------------------------------------------------------ PARENT PORTAL
 def contact_and_handbook():
@@ -738,6 +825,92 @@ def parent_profile_form(k: dict):
         st.rerun()
 
 
+def _chips(items, cls=""):
+    if not items:
+        return "<span class='chip'>—</span>"
+    return "".join(f"<span class='chip {cls}'>{x}</span>" for x in items)
+
+
+def daily_report_html(log: dict, title: str) -> str:
+    pt = (log.get("potty_type") or []) + (log.get("potty_progress") or [])
+    parts = [f"<div class='rep'><h4>{title}</h4>",
+             "<div class='lbl'>Potty</div>", _chips(pt, "potty"),
+             "<div class='lbl'>Snack</div>",
+             f"<span class='chip snack'>{log.get('snack') or '—'}</span>",
+             "<div class='lbl'>Mood</div>", _chips(log.get("mood") or [], "mood")]
+    if log.get("behavior"):
+        parts.append(f"<div style='margin-top:.3rem'>{log['behavior']}</div>")
+    if log.get("injury"):
+        parts.append(f"<div class='lbl'>Injury note</div><div>{log['injury']}</div>")
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def render_parent_daily(kids: list[dict]):
+    now = S.now_local(TZ)
+    today = S.today_iso(TZ)
+    for k in kids:
+        st.markdown(f"#### 📋 {k['name']}")
+        log = store.get_daily_log(k["id"], today)
+        if log:
+            st.markdown(daily_report_html(log, "Today · " + now.strftime("%b ") + str(now.day)),
+                        unsafe_allow_html=True)
+        else:
+            st.caption("No report posted yet today.")
+        history = [lg for lg in store.list_daily_logs(k["id"]) if lg["date"] != today]
+        if history:
+            with st.expander("Past days"):
+                for lg in history[:20]:
+                    st.markdown(daily_report_html(lg, lg["date"]), unsafe_allow_html=True)
+
+
+def render_news(my_cohorts: set):
+    st.markdown("### 📣 Announcements")
+    anns = store.list_announcements()
+    if not anns:
+        st.caption("No announcements right now.")
+    for a in anns[:10]:
+        st.markdown(f"<div class='post'><div class='when'>{a['posted_date']}</div>"
+                    f"<div class='head'>{a['title']}</div>{a['message']}</div>", unsafe_allow_html=True)
+        if a.get("photos"):
+            pcols = st.columns(4)
+            for i, ph in enumerate(a["photos"]):
+                pcols[i % 4].image(ph["url"], width="stretch")
+    st.markdown("### 🌈 Daily updates")
+    updates = [u for u in store.list_updates()
+               if not u["cohort"] or u["cohort"] == "All" or u["cohort"] in my_cohorts]
+    if not updates:
+        st.caption("No updates yet.")
+    for u in updates[:15]:
+        st.markdown(f"<div class='post'><div class='when'>{u['date']}</div>{u['note']}</div>",
+                    unsafe_allow_html=True)
+        if u["photos"]:
+            pcols = st.columns(4)
+            for i, ph in enumerate(u["photos"]):
+                pcols[i % 4].image(ph["url"], width="stretch")
+
+
+def render_scrapbook(kids: list[dict]):
+    st.caption("💡 To save/print: use your browser's Print → Save as PDF "
+               "(on iPad: Share → Print). Stay on this tab when you print.")
+    logo_tag = f"<img src='{LOGO_URI}'/>" if LOGO_URI else ""
+    for k in kids:
+        items = store.list_album(k["id"])
+        if not items:
+            st.info(f"No scrapbook photos yet for {k['name']}. Mrs. Y adds these!")
+            continue
+        cards = ""
+        for it in items:
+            for ph in it["photos"]:
+                cap = it.get("caption") or ""
+                cards += f"<div class='sb-card'><img src='{ph['url']}'/><div class='sb-cap'>{cap}</div></div>"
+        st.markdown(
+            f"<div class='scrapbook'><div class='sb-title'>{k['name']}'s Scrapbook 🌈</div>"
+            f"<div class='sb-grid'>{cards}</div>"
+            f"<div class='sb-foot'><span>The Tot Spot</span>{logo_tag}</div></div>",
+            unsafe_allow_html=True)
+
+
 def view_parent():
     st.markdown(css(), unsafe_allow_html=True)
     logo_header()
@@ -765,41 +938,35 @@ def view_parent():
     my_cohorts = {k["cohort"] for k in kids if k["cohort"]}
     st.markdown(f"<div class='subtitle'>Welcome, family of {names}! 👋</div>", unsafe_allow_html=True)
 
-    st.markdown("### 📣 Announcements")
-    anns = store.list_announcements()
-    if not anns:
-        st.caption("No announcements right now.")
-    for a in anns[:10]:
-        st.markdown(f"<div class='post'><div class='when'>{a['posted_date']}</div>"
-                    f"<div class='head'>{a['title']}</div>{a['message']}</div>", unsafe_allow_html=True)
-        if a.get("photos"):
-            pcols = st.columns(4)
-            for i, ph in enumerate(a["photos"]):
-                pcols[i % 4].image(ph["url"], width="stretch")
+    t_home, t_daily, t_news, t_profile, t_book, t_contact = st.tabs(
+        ["🏠 Home", "📋 Daily Report", "📣 News", "🪪 Profile", "📖 Scrapbook", "📇 Contact"]
+    )
 
-    st.markdown("### 🌈 Daily updates")
-    updates = [u for u in store.list_updates()
-               if not u["cohort"] or u["cohort"] == "All" or u["cohort"] in my_cohorts]
-    if not updates:
-        st.caption("No updates yet.")
-    for u in updates[:15]:
-        st.markdown(f"<div class='post'><div class='when'>{u['date']}</div>{u['note']}</div>",
-                    unsafe_allow_html=True)
-        if u["photos"]:
-            pcols = st.columns(4)
-            for i, ph in enumerate(u["photos"]):
-                pcols[i % 4].image(ph["url"], width="stretch")
+    with t_home:
+        for k in kids:
+            if k["child_photo"]:
+                st.markdown(id_card_html(k, S.now_local(TZ)), unsafe_allow_html=True)
+        st.markdown("#### Today at a glance")
+        render_parent_daily(kids)
 
-    for k in kids:
-        if k["child_photo"]:
-            st.markdown(id_card_html(k, S.now_local(TZ)), unsafe_allow_html=True)
-        parent_profile_form(k)
+    with t_daily:
+        render_parent_daily(kids)
 
-    contact_and_handbook()
+    with t_news:
+        render_news(my_cohorts)
 
-    if st.button("Sign out"):
-        del st.session_state["parent_pin"]
-        st.rerun()
+    with t_profile:
+        for k in kids:
+            parent_profile_form(k)
+
+    with t_book:
+        render_scrapbook(kids)
+
+    with t_contact:
+        contact_and_handbook()
+        if st.button("Sign out"):
+            del st.session_state["parent_pin"]
+            st.rerun()
 
 
 # ------------------------------------------------------------------ HOME
