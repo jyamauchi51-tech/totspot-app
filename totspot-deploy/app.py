@@ -190,19 +190,21 @@ div[data-testid="stMetric"] { background: __CARD__; border: 2px solid __LINE__; 
 .contactbox { background:__teal_bg__; border-radius:1.1rem; padding:1rem 1.2rem; }
 
 /* cute student ID card */
-.idcard{max-width:470px;margin:.4rem auto 1.4rem;background:#fff;border-radius:1.4rem;overflow:hidden;
-  box-shadow:0 12px 32px rgba(0,0,0,.15);border:1px solid __LINE__;}
+.idcard{max-width:370px;margin:.4rem auto 1.4rem;background:#fff;border-radius:1.1rem;overflow:hidden;
+  box-shadow:0 10px 26px rgba(0,0,0,.15);border:1px solid __LINE__;}
 .idbar{height:8px;background:linear-gradient(90deg,__CORAL__,__ORANGE__,__YELLOW__,__GREEN__,__TEAL__,__LAVENDER__);}
 .idtop{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem .2rem;}
 .idlogo{height:34px;width:auto;}
 .idtag{background:__CORAL__;color:#fff;font-family:'Baloo 2';font-weight:800;font-size:.72rem;
   letter-spacing:.12em;padding:.28rem .7rem;border-radius:999px;}
-.idbody{display:flex;gap:1rem;padding:.5rem 1rem 1rem;align-items:center;}
-.idphoto{width:124px;height:124px;object-fit:cover;border-radius:1rem;border:4px solid __YELLOW__;flex:0 0 auto;}
-.idname{font-family:'Baloo 2';font-weight:800;font-size:1.5rem;color:__INK__;line-height:1.1;margin-bottom:.25rem;}
-.idrow{font-size:.98rem;color:__INK__;margin:.08rem 0;}
-.idrow b{color:__MUTED__;font-weight:800;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;
-  margin-right:.4rem;display:inline-block;min-width:78px;}
+.idbody{display:flex;flex-wrap:nowrap;gap:.8rem;padding:.5rem .9rem .9rem;align-items:center;}
+.idphoto{width:88px;height:88px;object-fit:cover;border-radius:.8rem;border:3px solid __YELLOW__;flex:0 0 auto;}
+.idfields{min-width:0;}
+.idname{font-family:'Baloo 2';font-weight:800;font-size:1.2rem;color:__INK__;line-height:1.05;margin-bottom:.2rem;}
+.idrow{font-size:.8rem;color:__INK__;margin:.05rem 0;}
+.idrow b{color:__MUTED__;font-weight:800;font-size:.58rem;text-transform:uppercase;letter-spacing:.04em;
+  margin-right:.35rem;display:inline-block;min-width:58px;}
+.idnum{margin-top:.35rem;font-size:.9rem;}
 .idnum{margin-top:.45rem;font-family:'Baloo 2';font-weight:800;color:__CORAL__;letter-spacing:.05em;}
 .idfoot{background:__CORAL_BG__;text-align:center;padding:.5rem;font-family:'Baloo 2';font-weight:700;
   color:__INK__;font-size:.9rem;}
