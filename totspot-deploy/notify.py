@@ -26,13 +26,14 @@ except Exception:
     pass
 
 
-def send_email(cfg: dict, subject: str, body: str) -> tuple[bool, str]:
-    if not cfg or not cfg.get("host") or not cfg.get("to"):
+def send_email(cfg: dict, subject: str, body: str, to: str | None = None) -> tuple[bool, str]:
+    recipient = to or (cfg.get("to") if cfg else None)
+    if not cfg or not cfg.get("host") or not recipient:
         return False, "email not configured"
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = cfg.get("from") or cfg.get("user", "")
-    msg["To"] = cfg["to"]
+    msg["To"] = recipient
     msg.set_content(body)
     try:
         with smtplib.SMTP(cfg["host"], int(cfg.get("port", 587)), timeout=20) as s:
