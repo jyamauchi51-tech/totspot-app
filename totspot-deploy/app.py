@@ -160,8 +160,17 @@ button[kind="primary"]:hover, button[kind="primaryFormSubmit"]:hover { color:#ff
 
 /* rounder inputs + branded tabs */
 .stTextInput input, .stTextArea textarea, .stDateInput input { border-radius:.8rem !important; }
-.stTabs [data-baseweb="tab"] { font-family:'Baloo 2'; font-weight:700; }
-.stTabs [aria-selected="true"] { color:__CORAL__ !important; }
+.stTabs [data-baseweb="tab-list"] { gap:.45rem; flex-wrap:wrap; border-bottom:none; }
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none !important; }
+.stTabs [data-baseweb="tab"] {
+    font-family:'Baloo 2'; font-weight:700; background:__coral_bg__; color:__ink__;
+    border-radius:999px; padding:.35rem 1.05rem; border:2px solid transparent; height:auto;
+}
+.stTabs [data-baseweb="tab"]:hover { background:#fff; border-color:__coral__; color:__ink__; }
+.stTabs [aria-selected="true"] {
+    background:__coral__ !important; color:#fff !important; border-color:__coral__ !important;
+    box-shadow:0 3px 10px rgba(244,151,142,.4);
+}
 
 .home-grid { display: flex; gap: 1.2rem; flex-wrap: wrap; justify-content: center; margin-top: 1.4rem; }
 .home-card {
