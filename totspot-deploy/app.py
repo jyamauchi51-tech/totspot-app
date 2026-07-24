@@ -360,7 +360,8 @@ def kids_for_login(email: str) -> list[dict]:
     for k in store.list_kids():
         if k["status"] != "Enrolled":
             continue
-        emails = {(k.get("email") or "").strip().lower(),
+        emails = {(k.get("login_email") or "").strip().lower(),
+                  (k.get("email") or "").strip().lower(),
                   (k.get("parent2_email") or "").strip().lower()}
         if e in emails:
             out.append(k)
@@ -723,8 +724,8 @@ def view_admin():
                 if cc2.button("New code", key=f"code_{k['id']}", width="stretch"):
                     assign_pin(k["id"])
                     st.rerun()
-                login_email = k["email"] or "⚠️ set Parent Email below"
-                login_pw = k.get("login_password") or "⚠️ set password below"
+                login_email = k.get("login_email") or k["email"] or "— (parent hasn't registered)"
+                login_pw = k.get("login_password") or "— (parent hasn't registered)"
                 st.caption(f"Portal login → **email:** {login_email}  ·  **password:** {login_pw}")
                 admin_profile_editor(k)
                 if st.button("Withdraw child", key=f"wd_{k['id']}"):
@@ -989,23 +990,45 @@ def view_parent():
     st.markdown(css(), unsafe_allow_html=True)
     logo_header()
     banner()
-    # Layer 1 — email + password
+    # Layer 1 — log in (email + password) or register (with child's code)
     if not st.session_state.get("parent_authed"):
-        st.markdown("<div class='subtitle'>Family Login 🌈</div>", unsafe_allow_html=True)
+        st.markdown("<div class='subtitle'>Family Portal 🌈</div>", unsafe_allow_html=True)
         cols = st.columns([1, 2, 1])
         with cols[1]:
-            if not _locked("plogin"):
-                email = st.text_input("Email")
-                pw = st.text_input("Password", type="password")
-                if st.button("Log in", type="primary", width="stretch"):
-                    if authenticate(email, pw):
-                        _reset_fails("plogin")
-                        st.session_state.parent_authed = True
-                        st.session_state.parent_login_email = email.strip().lower()
-                        st.rerun()
+            tab_login, tab_reg = st.tabs(["Log in", "Register"])
+            with tab_login:
+                if not _locked("plogin"):
+                    email = st.text_input("Email", key="login_email_in",
+                                          help="Tip: let your browser save your login for next time.")
+                    pw = st.text_input("Password", type="password", key="login_pw_in")
+                    if st.button("Log in", type="primary", width="stretch"):
+                        if authenticate(email, pw):
+                            _reset_fails("plogin")
+                            st.session_state.parent_authed = True
+                            st.session_state.parent_login_email = email.strip().lower()
+                            st.rerun()
+                        else:
+                            _record_fail("plogin")
+                            st.error("Email or password not recognized. Check with Mrs. Y.")
+            with tab_reg:
+                st.caption("First time? Use your child's 6-digit code to set up your login.")
+                rcode = st.text_input("Child's 6-digit code", max_chars=PIN_LEN, key="reg_code")
+                remail = st.text_input("Your email", key="reg_email")
+                rpw = st.text_input("Create a password", type="password", key="reg_pw")
+                rpw2 = st.text_input("Confirm password", type="password", key="reg_pw2")
+                if st.button("Create login", type="primary", width="stretch"):
+                    matches = enrolled_by_pin(rcode.strip())
+                    if not matches:
+                        st.error("That code didn't match a child. Please check with Mrs. Y.")
+                    elif not remail.strip() or not rpw:
+                        st.error("Please enter your email and a password.")
+                    elif rpw != rpw2:
+                        st.error("The passwords don't match.")
                     else:
-                        _record_fail("plogin")
-                        st.error("Email or password not recognized. Check with Mrs. Y.")
+                        for k in matches:
+                            store.update_kid(k["id"], {"login_email": remail.strip().lower(),
+                                                       "login_password": rpw})
+                        st.success("Login created! Switch to the **Log in** tab to sign in. 🎉")
             security_reminder()
         return
 
