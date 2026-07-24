@@ -2,10 +2,10 @@
 family portal where parents view announcements and edit their child's profile.
 
 Views chosen by the ?view= URL parameter:
-  ?view=kiosk   -> iPad check-in (4-digit PIN pad)
+  ?view=kiosk   -> iPad check-in (6-digit PIN pad)
   ?view=signup  -> public waitlist sign-up
   ?view=admin   -> password-protected management
-  ?view=parent  -> family portal (enter 4-digit code)
+  ?view=parent  -> family portal (enter 6-digit code)
   (no param)    -> home page with links
 """
 
@@ -354,6 +354,32 @@ def assign_pin(kid_id: str):
     store.update_kid(kid_id, {"pin": S.new_pin(existing)})
 
 
+PIN_LEN = 6
+
+
+def _locked(scope: str) -> bool:
+    """True if this browser is temporarily locked out after too many wrong codes."""
+    now = S.now_local(TZ).timestamp()
+    until = st.session_state.get(f"{scope}_lock_until", 0)
+    if now < until:
+        st.error(f"Too many attempts. Please wait {int(until - now)} seconds, then try again.")
+        return True
+    return False
+
+
+def _record_fail(scope: str, limit: int = 5, wait: int = 60):
+    n = st.session_state.get(f"{scope}_fails", 0) + 1
+    st.session_state[f"{scope}_fails"] = n
+    if n >= limit:
+        st.session_state[f"{scope}_lock_until"] = S.now_local(TZ).timestamp() + wait
+        st.session_state[f"{scope}_fails"] = 0
+
+
+def _reset_fails(scope: str):
+    st.session_state[f"{scope}_fails"] = 0
+    st.session_state[f"{scope}_lock_until"] = 0
+
+
 # ------------------------------------------------------------------ KIOSK (PIN)
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
@@ -368,13 +394,15 @@ def view_kiosk():
 
     pin = st.session_state.setdefault("kpin", "")
 
-    if len(pin) == 4:
+    if len(pin) == PIN_LEN:
         matches = enrolled_by_pin(pin)
         cols = st.columns([1, 2, 1])
         with cols[1]:
             if not matches:
-                st.error(f"No child found for code {pin}.")
+                _record_fail("kiosk")
+                st.error("No child found for that code.")
             else:
+                _reset_fails("kiosk")
                 date_iso = S.today_iso(TZ)
                 todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
                 for kid in matches:
@@ -402,12 +430,14 @@ def view_kiosk():
     # keypad
     cols = st.columns([1, 2, 1])
     with cols[1]:
-        dots = "".join("●" if i < len(pin) else "○" for i in range(4))
+        if _locked("kiosk"):
+            return
+        dots = "".join("●" if i < len(pin) else "○" for i in range(PIN_LEN))
         st.markdown(f"<div class='pindots'>{dots}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='subtitle'>Enter your 4-digit family code</div>", unsafe_allow_html=True)
+        st.markdown("<div class='subtitle'>Enter your 6-digit family code</div>", unsafe_allow_html=True)
 
         def press(d):
-            if len(st.session_state.kpin) < 4:
+            if len(st.session_state.kpin) < PIN_LEN:
                 st.session_state.kpin += d
                 st.rerun()
 
@@ -917,10 +947,12 @@ def view_parent():
     banner()
     code = st.session_state.get("parent_pin")
     if not code:
-        st.markdown("<div class='subtitle'>Enter your 4-digit family code 🌈</div>", unsafe_allow_html=True)
+        st.markdown("<div class='subtitle'>Enter your 6-digit family code 🌈</div>", unsafe_allow_html=True)
         cols = st.columns([1, 2, 1])
         with cols[1]:
-            entered = st.text_input("Family code", max_chars=4)
+            if _locked("portal"):
+                return
+            entered = st.text_input("Family code", max_chars=PIN_LEN)
             if st.button("View", type="primary", width="stretch") and entered.strip():
                 st.session_state.parent_pin = entered.strip()
                 st.rerun()
@@ -928,11 +960,13 @@ def view_parent():
 
     kids = enrolled_by_pin(code)
     if not kids:
+        _record_fail("portal")
+        del st.session_state["parent_pin"]
         st.error("That code didn't match an enrolled child. Double-check with Mrs. Y.")
         if st.button("Try another code"):
-            del st.session_state["parent_pin"]
             st.rerun()
         return
+    _reset_fails("portal")
 
     names = ", ".join(k["name"] for k in kids)
     my_cohorts = {k["cohort"] for k in kids if k["cohort"]}
