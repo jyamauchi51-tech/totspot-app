@@ -998,10 +998,12 @@ def view_parent():
             tab_login, tab_reg = st.tabs(["Log in", "Register"])
             with tab_login:
                 if not _locked("plogin"):
-                    email = st.text_input("Email", key="login_email_in",
-                                          help="Tip: let your browser save your login for next time.")
-                    pw = st.text_input("Password", type="password", key="login_pw_in")
-                    if st.button("Log in", type="primary", width="stretch"):
+                    with st.form("login_form"):
+                        email = st.text_input("Email",
+                                              help="Tip: let your browser save your login for next time.")
+                        pw = st.text_input("Password", type="password")
+                        do_login = st.form_submit_button("Log in", type="primary", width="stretch")
+                    if do_login:
                         if authenticate(email, pw):
                             _reset_fails("plogin")
                             st.session_state.parent_authed = True
@@ -1012,11 +1014,13 @@ def view_parent():
                             st.error("Email or password not recognized. Check with Mrs. Y.")
             with tab_reg:
                 st.caption("First time? Use your child's 6-digit code to set up your login.")
-                rcode = st.text_input("Child's 6-digit code", max_chars=PIN_LEN, key="reg_code")
-                remail = st.text_input("Your email", key="reg_email")
-                rpw = st.text_input("Create a password", type="password", key="reg_pw")
-                rpw2 = st.text_input("Confirm password", type="password", key="reg_pw2")
-                if st.button("Create login", type="primary", width="stretch"):
+                with st.form("register_form"):
+                    rcode = st.text_input("Child's 6-digit code", max_chars=PIN_LEN)
+                    remail = st.text_input("Your email")
+                    rpw = st.text_input("Create a password", type="password")
+                    rpw2 = st.text_input("Confirm password", type="password")
+                    do_reg = st.form_submit_button("Create login", type="primary", width="stretch")
+                if do_reg:
                     matches = enrolled_by_pin(rcode.strip())
                     if not matches:
                         st.error("That code didn't match a child. Please check with Mrs. Y.")
@@ -1047,8 +1051,10 @@ def view_parent():
         cols = st.columns([1, 2, 1])
         with cols[1]:
             if not _locked("pcode"):
-                entered = st.text_input("6-digit code", max_chars=PIN_LEN)
-                if st.button("Unlock", type="primary", width="stretch") and entered.strip():
+                with st.form("code_form"):
+                    entered = st.text_input("6-digit code", max_chars=PIN_LEN)
+                    do_unlock = st.form_submit_button("Unlock", type="primary", width="stretch")
+                if do_unlock and entered.strip():
                     if entered.strip() in {k.get("pin") for k in kids}:
                         _reset_fails("pcode")
                         st.session_state.parent_pin = entered.strip()
