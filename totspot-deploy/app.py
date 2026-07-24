@@ -160,6 +160,14 @@ button[kind="primary"]:hover, button[kind="primaryFormSubmit"]:hover { color:#ff
 
 /* rounder inputs + branded tabs */
 .stTextInput input, .stTextArea textarea, .stDateInput input { border-radius:.8rem !important; }
+/* keep inputs + labels readable even if the phone/browser is in dark mode */
+div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="select"] { background:#fff !important; }
+.stTextInput input, .stTextArea textarea, .stNumberInput input, .stDateInput input {
+    background:#fff !important; color:__ink__ !important; -webkit-text-fill-color:__ink__ !important;
+}
+[data-testid="stWidgetLabel"] *, .stTextInput label, .stTextArea label, .stSelectbox label,
+.stRadio label, .stCheckbox label { color:__ink__ !important; }
+[data-testid="stForm"] { background:#fff; }
 .stTabs [data-baseweb="tab-list"] { gap:.45rem; flex-wrap:wrap; border-bottom:none; }
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none !important; }
 .stTabs [data-baseweb="tab"] {
