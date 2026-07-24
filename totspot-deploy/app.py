@@ -11,7 +11,8 @@ Views chosen by the ?view= URL parameter:
 
 import base64
 import io
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -89,6 +90,7 @@ TZ = SECRETS.get("timezone", "America/Phoenix")
 EMAIL_CFG = SECRETS.get("email", {})
 CONTACT = SECRETS.get("contact", {})           # name, phone, email, address
 HANDBOOK_URL = SECRETS.get("handbook_url", "")
+APP_URL = SECRETS.get("app_url", "https://the-tot-spot.streamlit.app")
 
 if "store_bundle" not in st.session_state:
     st.session_state.store_bundle = S.get_store(SECRETS)
@@ -1024,6 +1026,9 @@ def view_parent():
                     matches = enrolled_by_pin(rcode.strip())
                     if not matches:
                         st.error("That code didn't match a child. Please check with Mrs. Y.")
+                    elif any((k.get("login_password") or "") for k in matches):
+                        st.error("This child is already registered. Use **Forgot password?** "
+                                 "below if you need to reset it.")
                     elif not remail.strip() or not rpw:
                         st.error("Please enter your email and a password.")
                     elif rpw != rpw2:
@@ -1033,6 +1038,26 @@ def view_parent():
                             store.update_kid(k["id"], {"login_email": remail.strip().lower(),
                                                        "login_password": rpw})
                         st.success("Login created! Switch to the **Log in** tab to sign in. 🎉")
+
+            with st.expander("Forgot password?"):
+                with st.form("forgot_form"):
+                    femail = st.text_input("Your registered email")
+                    if st.form_submit_button("Email me a reset link"):
+                        targets = [k for k in kids_for_login(femail) if (k.get("login_password") or "")]
+                        if targets:
+                            token = uuid.uuid4().hex
+                            expires = (S.now_local(TZ) + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+                            for k in targets:
+                                store.update_kid(k["id"], {"reset_token": token, "reset_expires": expires})
+                            link = f"{APP_URL}/?view=reset&token={token}"
+                            notify.send_email(
+                                EMAIL_CFG, "Reset your Tot Spot password",
+                                f"Hi! Someone requested a password reset for your Tot Spot login.\n\n"
+                                f"Click this link (valid for 1 hour) to set a new password:\n{link}\n\n"
+                                f"If you didn't request this, you can ignore this email.",
+                                to=femail.strip())
+                        st.success("If that email is registered, we've sent a reset link. "
+                                   "Check your inbox (and spam).")
             security_reminder()
         return
 
@@ -1102,6 +1127,48 @@ def view_parent():
 
 
 # ------------------------------------------------------------------ HOME
+def _reset_valid(k) -> bool:
+    exp = k.get("reset_expires") or ""
+    if not exp:
+        return False
+    try:
+        dt = datetime.strptime(exp, "%Y-%m-%d %H:%M:%S")
+        return S.now_local(TZ).replace(tzinfo=None) < dt
+    except Exception:
+        return False
+
+
+def view_reset():
+    st.markdown(css(), unsafe_allow_html=True)
+    logo_header()
+    st.markdown("<div class='subtitle'>Reset your password 🔒</div>", unsafe_allow_html=True)
+    cols = st.columns([1, 2, 1])
+    with cols[1]:
+        token = st.query_params.get("token", "")
+        kids = [k for k in store.list_kids()
+                if token and (k.get("reset_token") or "") == token and _reset_valid(k)]
+        if not kids:
+            st.error("This reset link is invalid or has expired. "
+                     "Please request a new one from the login page.")
+            return
+        with st.form("reset_form"):
+            npw = st.text_input("New password", type="password")
+            npw2 = st.text_input("Confirm new password", type="password")
+            done = st.form_submit_button("Set new password", type="primary", width="stretch")
+        if done:
+            if not npw:
+                st.error("Please enter a new password.")
+            elif npw != npw2:
+                st.error("The passwords don't match.")
+            else:
+                for k in kids:
+                    store.update_kid(k["id"], {"login_password": npw,
+                                               "reset_token": "", "reset_expires": ""})
+                st.success("Password updated! You can close this and log in "
+                           "with your new password. 🎉")
+        security_reminder()
+
+
 def view_home():
     st.markdown(css(), unsafe_allow_html=True)
     logo_header()
@@ -1125,6 +1192,6 @@ def view_home():
 
 ROUTES = {
     "kiosk": view_kiosk, "signup": view_signup, "admin": view_admin,
-    "parent": view_parent, "home": view_home,
+    "parent": view_parent, "reset": view_reset, "home": view_home,
 }
 ROUTES.get(st.query_params.get("view", "home"), view_home)()
