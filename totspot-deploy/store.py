@@ -84,6 +84,7 @@ KID_FIELDS = {
     "parent2_name": "Parent 2 Name",
     "parent2_phone": "Parent 2 Phone",
     "parent2_email": "Parent 2 Email",
+    "login_password": "Login Password",
 }
 KID_ATTACH_FIELD = "Enrollment Form"
 KID_PHOTO_FIELD = "Child Photo"
