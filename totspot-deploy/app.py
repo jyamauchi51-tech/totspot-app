@@ -1150,6 +1150,7 @@ def view_reset():
         if not kids:
             st.error("This reset link is invalid or has expired. "
                      "Please request a new one from the login page.")
+            st.link_button("🔑 Back to login", f"{APP_URL}/?view=parent", width="stretch")
             return
         with st.form("reset_form"):
             npw = st.text_input("New password", type="password")
@@ -1164,8 +1165,8 @@ def view_reset():
                 for k in kids:
                     store.update_kid(k["id"], {"login_password": npw,
                                                "reset_token": "", "reset_expires": ""})
-                st.success("Password updated! You can close this and log in "
-                           "with your new password. 🎉")
+                st.success("Password updated! 🎉 Tap below to log in with your new password.")
+        st.link_button("🔑 Back to login", f"{APP_URL}/?view=parent", width="stretch")
         security_reminder()
 
 
