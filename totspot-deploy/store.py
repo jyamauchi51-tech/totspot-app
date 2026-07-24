@@ -126,13 +126,12 @@ def new_family_code() -> str:
 
 
 def new_pin(existing: set[str]) -> str:
-    """A 4-digit code not already in `existing`."""
-    for _ in range(10000):
-        raw = uuid.uuid4().int % 10000
-        pin = f"{raw:04d}"
+    """A 6-digit code not already in `existing`."""
+    for _ in range(200000):
+        pin = f"{uuid.uuid4().int % 1000000:06d}"
         if pin not in existing:
             return pin
-    return "0000"
+    return "000000"
 
 
 # ============================================================ LOCAL BACKEND
