@@ -22,7 +22,8 @@ import store as S
 
 _ICON192 = Path(__file__).resolve().parent / "assets" / "app-icon-192.png"
 st.set_page_config(page_title="The Tot Spot",
-                   page_icon=str(_ICON192) if _ICON192.exists() else "🐛", layout="wide")
+                   page_icon=str(_ICON192) if _ICON192.exists() else "🐛",
+                   layout="wide", initial_sidebar_state="expanded")
 
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"  # load next to app.py
 
@@ -118,6 +119,11 @@ h1, h2, h3 { font-family: 'Baloo 2', 'Nunito', cursive; color: __INK__; }
 
 header[data-testid="stHeader"] { background: transparent; }
 #MainMenu, footer, [data-testid="stToolbar"] { visibility: hidden; }
+/* keep the sidebar open/close toggle visible even with chrome hidden (mobile menu) */
+[data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarCollapseButton"] {
+    visibility: visible !important; display: flex !important; z-index: 1001;
+}
+[data-testid="stSidebarCollapsedControl"] { position: fixed; top: .5rem; left: .5rem; }
 
 /* rainbow bar pinned to the very top */
 .stApp::before{content:"";position:fixed;top:0;left:0;right:0;height:6px;z-index:1000;
