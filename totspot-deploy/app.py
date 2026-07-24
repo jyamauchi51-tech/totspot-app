@@ -351,6 +351,40 @@ def enrolled_by_pin(pin: str) -> list[dict]:
             if k["status"] == "Enrolled" and (k.get("pin") or "").strip() == pin]
 
 
+def kids_for_login(email: str) -> list[dict]:
+    """Enrolled kids whose parent email (either parent) matches the login email."""
+    e = (email or "").strip().lower()
+    if not e:
+        return []
+    out = []
+    for k in store.list_kids():
+        if k["status"] != "Enrolled":
+            continue
+        emails = {(k.get("email") or "").strip().lower(),
+                  (k.get("parent2_email") or "").strip().lower()}
+        if e in emails:
+            out.append(k)
+    return out
+
+
+def authenticate(email: str, password: str) -> list[dict]:
+    if not password:
+        return []
+    return [k for k in kids_for_login(email) if (k.get("login_password") or "") == password]
+
+
+def _parent_logout():
+    for key in ("parent_authed", "parent_login_email", "parent_pin"):
+        st.session_state.pop(key, None)
+
+
+def security_reminder():
+    st.markdown(
+        f"<div style='text-align:center;color:{COLORS['muted']};font-size:.85rem;margin-top:1.4rem'>"
+        "🔒 For optimal security, please don't share your login info or 6-digit code with anyone.</div>",
+        unsafe_allow_html=True)
+
+
 def assign_pin(kid_id: str):
     existing = {(k.get("pin") or "") for k in store.list_kids()}
     store.update_kid(kid_id, {"pin": S.new_pin(existing)})
@@ -607,13 +641,17 @@ def admin_profile_editor(k: dict):
             c15, c16 = st.columns(2)
             insurance = c15.text_input("Insurance", k["insurance"], key=f"ins_{k['id']}")
             policy = c16.text_input("Policy #", k["policy_number"], key=f"pol_{k['id']}")
+        login_pw = st.text_input("Family portal password", k.get("login_password", ""),
+                                 key=f"lpw_{k['id']}",
+                                 help="Parent logs into the portal with their email + this password.")
         scan = st.file_uploader("Signed paper form (photo/PDF)",
                                 type=["png", "jpg", "jpeg", "pdf"], key=f"sc_{k['id']}")
         saved = st.form_submit_button("💾 Save profile", type="primary")
     if saved:
         vals.update({"cohort": cohort, "photo_social": photo_social, "photo_blur": photo_blur,
                      "hospital": hospital, "hospital_phone": hospital_ph,
-                     "insurance": insurance, "policy_number": policy})
+                     "insurance": insurance, "policy_number": policy,
+                     "login_password": login_pw})
         store.update_kid(k["id"], vals)
         if scan is not None:
             store.upload_enrollment_form(k["id"], scan.name, scan.getvalue())
@@ -680,11 +718,14 @@ def view_admin():
             with st.expander(label):
                 code = k["pin"] or "—"
                 cc1, cc2 = st.columns([3, 1])
-                cc1.markdown(f"Family code (check-in + portal): <span class='codechip'>{code}</span>",
+                cc1.markdown(f"6-digit code (check-in + unlock): <span class='codechip'>{code}</span>",
                              unsafe_allow_html=True)
                 if cc2.button("New code", key=f"code_{k['id']}", width="stretch"):
                     assign_pin(k["id"])
                     st.rerun()
+                login_email = k["email"] or "⚠️ set Parent Email below"
+                login_pw = k.get("login_password") or "⚠️ set password below"
+                st.caption(f"Portal login → **email:** {login_email}  ·  **password:** {login_pw}")
                 admin_profile_editor(k)
                 if st.button("Withdraw child", key=f"wd_{k['id']}"):
                     store.update_kid_status(k["id"], "Withdrawn")
@@ -948,28 +989,55 @@ def view_parent():
     st.markdown(css(), unsafe_allow_html=True)
     logo_header()
     banner()
-    code = st.session_state.get("parent_pin")
-    if not code:
-        st.markdown("<div class='subtitle'>Enter your 6-digit family code 🌈</div>", unsafe_allow_html=True)
+    # Layer 1 — email + password
+    if not st.session_state.get("parent_authed"):
+        st.markdown("<div class='subtitle'>Family Login 🌈</div>", unsafe_allow_html=True)
         cols = st.columns([1, 2, 1])
         with cols[1]:
-            if _locked("portal"):
-                return
-            entered = st.text_input("Family code", max_chars=PIN_LEN)
-            if st.button("View", type="primary", width="stretch") and entered.strip():
-                st.session_state.parent_pin = entered.strip()
-                st.rerun()
+            if not _locked("plogin"):
+                email = st.text_input("Email")
+                pw = st.text_input("Password", type="password")
+                if st.button("Log in", type="primary", width="stretch"):
+                    if authenticate(email, pw):
+                        _reset_fails("plogin")
+                        st.session_state.parent_authed = True
+                        st.session_state.parent_login_email = email.strip().lower()
+                        st.rerun()
+                    else:
+                        _record_fail("plogin")
+                        st.error("Email or password not recognized. Check with Mrs. Y.")
+            security_reminder()
         return
 
-    kids = enrolled_by_pin(code)
+    kids = kids_for_login(st.session_state.get("parent_login_email", ""))
     if not kids:
-        _record_fail("portal")
-        del st.session_state["parent_pin"]
-        st.error("That code didn't match an enrolled child. Double-check with Mrs. Y.")
-        if st.button("Try another code"):
+        st.error("No enrolled children found for this login. Please contact Mrs. Y.")
+        if st.button("Log out"):
+            _parent_logout()
             st.rerun()
         return
-    _reset_fails("portal")
+
+    # Layer 2 — 6-digit family code
+    if not st.session_state.get("parent_pin"):
+        st.markdown("<div class='subtitle'>Enter your 6-digit family code to unlock 🔒</div>",
+                    unsafe_allow_html=True)
+        cols = st.columns([1, 2, 1])
+        with cols[1]:
+            if not _locked("pcode"):
+                entered = st.text_input("6-digit code", max_chars=PIN_LEN)
+                if st.button("Unlock", type="primary", width="stretch") and entered.strip():
+                    if entered.strip() in {k.get("pin") for k in kids}:
+                        _reset_fails("pcode")
+                        st.session_state.parent_pin = entered.strip()
+                        st.rerun()
+                    else:
+                        _record_fail("pcode")
+                        st.error("That code didn't match. Double-check with Mrs. Y.")
+            security_reminder()
+            if st.button("Log out", key="logout_code"):
+                _parent_logout()
+                st.rerun()
+        return
 
     names = ", ".join(k["name"] for k in kids)
     my_cohorts = {k["cohort"] for k in kids if k["cohort"]}
@@ -982,7 +1050,7 @@ def view_parent():
                         label_visibility="collapsed", key="parent_page")
         st.divider()
         if st.button("Sign out", width="stretch"):
-            del st.session_state["parent_pin"]
+            _parent_logout()
             st.rerun()
 
     if page == "🏠 Home":
