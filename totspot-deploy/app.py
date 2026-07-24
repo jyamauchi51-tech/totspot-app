@@ -648,12 +648,13 @@ def view_admin():
     m2.metric("Enrolled", len(enrolled))
     m3.metric("Here today", here_now)
 
-    t_wait, t_kids, t_today, t_logs, t_ann, t_upd, t_album = st.tabs(
-        [f"Waitlist ({len(waitlist)})", f"Children ({len(enrolled)})",
-         "Today", "Daily Logs", "Announcements", "Daily Update", "Album"]
-    )
+    with st.sidebar:
+        st.markdown("### 📋 Admin menu")
+        page = st.radio("Menu", ["Waitlist", "Children", "Today", "Daily Logs",
+                                 "Announcements", "Daily Update", "Album"],
+                        label_visibility="collapsed", key="admin_page")
 
-    with t_wait:
+    if page == "Waitlist":
         if not waitlist:
             st.write("No one on the waitlist.")
         for pos, k in enumerate(waitlist, 1):
@@ -671,7 +672,7 @@ def view_admin():
                     store.delete_kid(k["id"])
                     st.rerun()
 
-    with t_kids:
+    elif page == "Children":
         if not enrolled:
             st.write("No one enrolled yet.")
         for k in enrolled:
@@ -689,7 +690,7 @@ def view_admin():
                     store.update_kid_status(k["id"], "Withdrawn")
                     st.rerun()
 
-    with t_today:
+    elif page == "Today":
         st.caption(f"Attendance for {date_iso}")
         name_by_id = {k["id"]: k["name"] for k in kids}
         if not todays:
@@ -699,7 +700,7 @@ def view_admin():
                            "Out": c["check_out"] or "—"} for c in todays],
                          width="stretch", hide_index=True)
 
-    with t_logs:
+    elif page == "Daily Logs":
         st.caption(f"Per-child daily report for {date_iso}")
         if not enrolled:
             st.write("No enrolled children yet.")
@@ -727,7 +728,7 @@ def view_admin():
                         st.success("Saved!")
                         st.rerun()
 
-    with t_ann:
+    elif page == "Announcements":
         with st.form("new_ann", clear_on_submit=True):
             title = st.text_input("Title")
             msg = st.text_area("Message")
@@ -754,7 +755,7 @@ def view_admin():
                 store.delete_announcement(a["id"])
                 st.rerun()
 
-    with t_upd:
+    elif page == "Daily Update":
         now = S.now_local(TZ)
         meeting = cohorts_meeting_today(now)
         opts = COHORT_OPTIONS + ["All"]
@@ -781,7 +782,7 @@ def view_admin():
                 for i, ph in enumerate(u["photos"]):
                     pcols[i % 4].image(ph["url"], width="stretch")
 
-    with t_album:
+    elif page == "Album":
         st.caption("Add photos + captions to a child's scrapbook (parents can print it).")
         kmap = {k["name"]: k["id"] for k in enrolled}
         if kmap:
@@ -974,35 +975,33 @@ def view_parent():
     my_cohorts = {k["cohort"] for k in kids if k["cohort"]}
     st.markdown(f"<div class='subtitle'>Welcome, family of {names}! 👋</div>", unsafe_allow_html=True)
 
-    t_home, t_daily, t_news, t_profile, t_book, t_contact = st.tabs(
-        ["🏠 Home", "📋 Daily Report", "📣 News", "🪪 Profile", "📖 Scrapbook", "📇 Contact"]
-    )
+    with st.sidebar:
+        st.markdown("### 🌈 Menu")
+        page = st.radio("Menu", ["🏠 Home", "📋 Daily Report", "📣 News",
+                                 "🪪 Profile", "📖 Scrapbook", "📇 Contact"],
+                        label_visibility="collapsed", key="parent_page")
+        st.divider()
+        if st.button("Sign out", width="stretch"):
+            del st.session_state["parent_pin"]
+            st.rerun()
 
-    with t_home:
+    if page == "🏠 Home":
         for k in kids:
             if k["child_photo"]:
                 st.markdown(id_card_html(k, S.now_local(TZ)), unsafe_allow_html=True)
         st.markdown("#### Today at a glance")
         render_parent_daily(kids)
-
-    with t_daily:
+    elif page == "📋 Daily Report":
         render_parent_daily(kids)
-
-    with t_news:
+    elif page == "📣 News":
         render_news(my_cohorts)
-
-    with t_profile:
+    elif page == "🪪 Profile":
         for k in kids:
             parent_profile_form(k)
-
-    with t_book:
+    elif page == "📖 Scrapbook":
         render_scrapbook(kids)
-
-    with t_contact:
+    elif page == "📇 Contact":
         contact_and_handbook()
-        if st.button("Sign out"):
-            del st.session_state["parent_pin"]
-            st.rerun()
 
 
 # ------------------------------------------------------------------ HOME
