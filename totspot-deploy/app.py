@@ -461,6 +461,9 @@ def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
     logo_header(max_width=230)
     now = S.now_local(TZ)
+    st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:800;"
+                "font-size:1.7rem;color:#2B2B2B;margin:.2rem 0 0\">Welcome to The Tot Spot! 👋</div>",
+                unsafe_allow_html=True)
     st.markdown(f"<div class='subtitle'>Check-in &middot; {now.strftime('%A, %B ')}{now.day}</div>",
                 unsafe_allow_html=True)
     banner()
@@ -492,10 +495,12 @@ def view_kiosk():
                     if st.button(label, key=f"do_{kid['id']}", type="primary", width="stretch"):
                         if inside:
                             store.set_checkout(rec["id"], S.time_str(TZ))
-                            st.session_state.kflash = f"{kid['name']} checked out at {S.time_str(TZ)}. See you! 👋"
+                            st.session_state.kflash = (f"Have a great rest of your day, {kid['name']}! "
+                                                       "See you next time. 👋")
                         else:
                             store.add_checkin(kid["id"], date_iso, S.time_str(TZ))
-                            st.session_state.kflash = f"{kid['name']} checked in at {S.time_str(TZ)}! 🌈"
+                            st.session_state.kflash = (f"Have a great day, {kid['name']}! "
+                                                       "See you in a few. 🌈")
                         st.session_state.kpin = ""
                         st.rerun()
             if st.button("Start over", width="stretch"):
