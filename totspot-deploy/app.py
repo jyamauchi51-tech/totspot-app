@@ -459,7 +459,7 @@ def _reset_fails(scope: str):
 # ------------------------------------------------------------------ KIOSK (PIN)
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
-    logo_header(max_width=230)
+    logo_header(max_width=380)
     now = S.now_local(TZ)
     st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:800;"
                 "font-size:1.7rem;color:#2B2B2B;margin:.2rem 0 0\">Welcome to The Tot Spot! 👋</div>",
