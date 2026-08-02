@@ -1239,7 +1239,7 @@ def view_parent():
     book_count = sum(len(it["photos"]) for k in kids for it in store.list_album(k["id"]))
     book_label = f"📖 Scrapbook ({book_count})" if book_count else "📖 Scrapbook"
     t_home, t_daily, t_news, t_profile, t_book, t_contact = st.tabs(
-        ["🏠 Home", "📋 Daily Report", "📣 News", "🪪 Profile", book_label, "📇 Contact"]
+        ["🏠 Home", "📋 Daily Report", "📣 Announcements", "🪪 Profile", book_label, "📇 Contact"]
     )
     with t_home:
         for k in kids:
