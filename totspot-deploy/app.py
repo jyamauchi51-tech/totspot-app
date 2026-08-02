@@ -367,6 +367,34 @@ def child_photo_uploader(k: dict, key_prefix: str):
         st.rerun()
 
 
+def child_details_md(k: dict, now) -> str:
+    """Full read-only detail block for a child (used in the waitlist expander)."""
+    age = compute_age(k["birthdate"], now)
+    lines = []
+
+    def row(label, val):
+        if val:
+            lines.append(f"**{label}:** {val}")
+
+    row("Full name", k["name"])
+    bday = k["birthdate"] + (f"  ·  {age}" if age else "") if k["birthdate"] else age
+    row("Birthday / age", bday)
+    row("Gender", k["gender"])
+    row("Preferred cohort", k["cohort"])
+    row("School year", k["school_year"])
+    row("Signed up", k["signup_date"])
+    row("Address", k["address"])
+    row("Parent 1", " · ".join(x for x in [k["parent_name"], k["phone"], k["email"]] if x))
+    row("Parent 2", " · ".join(x for x in [k["parent2_name"], k["parent2_phone"], k["parent2_email"]] if x))
+    row("Emergency 1", " · ".join(x for x in [k["emergency1"], k["emergency1_phone"]] if x))
+    row("Emergency 2", " · ".join(x for x in [k["emergency2"], k["emergency2_phone"]] if x))
+    row("Authorized pickups", k["authorized_pickups"])
+    row("Allergies", k["notes"])
+    row("Medications", k["medications"])
+    row("Doctor", " · ".join(x for x in [k["physician"], k["physician_phone"]] if x))
+    return "  \n".join(lines) if lines else "_No extra details on file yet._"
+
+
 def enrolled_by_pin(pin: str) -> list[dict]:
     pin = (pin or "").strip()
     return [k for k in store.list_kids()
@@ -584,7 +612,7 @@ def view_signup():
                 "parent2_email": parent2_email.strip(),
                 "notes": notes.strip(), "school_year": school_year,
                 "cohort": "" if cohort == "No preference" else cohort,
-                "status": "Waitlist", "signup_date": S.today_iso(TZ),
+                "status": "Waitlist", "signup_date": S.stamp(TZ),
             })
             p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, {parent2_email.strip()})\n"
                        if parent2.strip() else "")
@@ -737,12 +765,16 @@ def view_admin():
     )
 
     with t_wait:
+        wl_now = S.now_local(TZ)
         if not waitlist:
             st.write("No one on the waitlist.")
         for pos, k in enumerate(waitlist, 1):
             c1, c2, c3 = st.columns([5, 1, 1])
             pref = f" · prefers {k['cohort']}" if k["cohort"] else ""
-            c1.markdown(f"**{pos}. {k['name']}** — {k['parent_name']} · {k['phone']} · {k['signup_date']}{pref}"
+            age = compute_age(k["birthdate"], wl_now)
+            agestr = f"  ({age})" if age else ""
+            c1.markdown(f"**{pos}. {k['name']}**{agestr} — {k['parent_name']} · {k['phone']}"
+                        f"  \n🗓️ signed up {k['signup_date'] or '?'}{pref}"
                         + (f"  \n_{k['notes']}_" if k["notes"] else ""))
             if c2.button("Enroll ✅", key=f"enroll_{k['id']}", width="stretch"):
                 store.update_kid_status(k["id"], "Enrolled")
@@ -753,6 +785,8 @@ def view_admin():
                 if st.button("Yes, delete", key=f"delwait_{k['id']}", type="primary"):
                     store.delete_kid(k["id"])
                     st.rerun()
+            with st.expander("View details"):
+                st.markdown(child_details_md(k, wl_now))
 
     with t_kids:
         if not enrolled:
@@ -814,18 +848,40 @@ def view_admin():
                         st.rerun()
 
     with t_ann:
+        if flash := st.session_state.pop("ann_flash", ""):
+            st.success(flash)
         with st.form("new_ann", clear_on_submit=True):
             title = st.text_input("Title")
             msg = st.text_area("Message")
-            ann_photos = st.file_uploader("Photos (optional)", type=["png", "jpg", "jpeg"],
+            ann_photos = st.file_uploader("Attach newsletter / photos (PDF, PNG, JPG)",
+                                          type=["png", "jpg", "jpeg", "pdf"],
                                           accept_multiple_files=True)
+            email_families = st.checkbox("📧 Email this to all enrolled families", value=True)
             posted = st.form_submit_button("📣 Post announcement", type="primary")
         if posted and (title or msg):
             now = S.now_local(TZ)
             a = store.add_announcement(title.strip(), msg.strip(),
                                        now.strftime("%b ") + str(now.day) + now.strftime(", %Y"), S.stamp(TZ))
-            if ann_photos:
-                store.add_announcement_photos(a["id"], [(f.name, f.getvalue()) for f in ann_photos])
+            atts = [(f.name, f.getvalue()) for f in ann_photos] if ann_photos else []
+            if atts:
+                store.add_announcement_photos(a["id"], atts)
+            sent = total = 0
+            if email_families:
+                emails = []
+                for k in enrolled:
+                    e = (k.get("login_email") or k.get("email") or k.get("parent2_email") or "").strip()
+                    if e and e.lower() not in [x.lower() for x in emails]:
+                        emails.append(e)
+                total = len(emails)
+                for e in emails:
+                    ok, _ = notify.send_email(
+                        EMAIL_CFG, f"📣 The Tot Spot: {title.strip() or 'Newsletter'}",
+                        (msg.strip() or "") + "\n\n— The Tot Spot",
+                        to=e, attachments=atts)
+                    if ok:
+                        sent += 1
+            st.session_state["ann_flash"] = (
+                f"Posted!" + (f" 💌 Emailed {sent} of {total} enrolled families." if email_families else ""))
             st.rerun()
         st.divider()
         for a in store.list_announcements():
