@@ -50,7 +50,8 @@ def branded_email(heading: str, message: str, portal_url: str,
    </td></tr>
    <tr><td style="background:#FDEBE8;padding:18px 24px;text-align:center;">
      <p style="margin:0 0 6px;font-size:13px;color:{muted};">{contact_line}</p>
-     <p style="margin:0;font-size:13px;"><a href="{website_url}" style="color:{coral};text-decoration:none;font-weight:bold;">Visit our website</a></p>
+     <p style="margin:0 0 8px;font-size:13px;"><a href="{website_url}" style="color:{coral};text-decoration:none;font-weight:bold;">Visit our website</a></p>
+     <p style="margin:0;font-size:11px;color:{muted};line-height:1.5;">📲 Tip: add The Tot Spot to your home screen — iPhone: Share &rarr; Add to Home Screen &nbsp;·&nbsp; Android: &#8942; &rarr; Add to Home screen</p>
    </td></tr>
   </table>
   <p style="font-size:11px;color:#B0B6C0;margin:14px 0 0;">The Tot Spot &middot; Preschool Prep &middot; Surprise, AZ</p>
