@@ -437,6 +437,16 @@ def security_reminder():
         unsafe_allow_html=True)
 
 
+def homescreen_hint():
+    st.markdown(
+        f"<div style='text-align:center;color:{COLORS['muted']};font-size:.76rem;"
+        "margin-top:1.8rem;line-height:1.6;opacity:.9'>"
+        "📲 <b>Add this to your home screen for quick access</b><br>"
+        "iPhone (Safari): tap <b>Share</b> → <b>Add to Home Screen</b>. &nbsp;·&nbsp; "
+        "Android (Chrome): tap <b>⋮</b> → <b>Add to Home screen</b>.</div>",
+        unsafe_allow_html=True)
+
+
 def _logo_bytes():
     try:
         return LOGO_PATH.read_bytes()
@@ -992,7 +1002,7 @@ def view_admin():
 # ------------------------------------------------------------------ PARENT PORTAL
 def contact_and_handbook():
     if CONTACT or HANDBOOK_URL:
-        st.markdown("### 📇 Contact Mrs. Y")
+        st.markdown("### 📇 Contact Ms. Megan")
         bits = []
         if CONTACT.get("name"):
             bits.append(f"**{CONTACT['name']}**")
@@ -1027,7 +1037,7 @@ def parent_profile_form(k: dict):
             f"{k['name']}'s family updated their profile in the parent portal "
             f"at {S.stamp(TZ)}.\n\nOpen Admin → Children to review.",
         )
-        st.success("Saved! " + ("Mrs. Y has been notified. 💌" if ok else "Thanks!"))
+        st.success("Saved! " + ("Ms. Megan has been notified. 💌" if ok else "Thanks!"))
         st.rerun()
 
 
@@ -1103,7 +1113,7 @@ def render_scrapbook(kids: list[dict]):
     for k in kids:
         items = store.list_album(k["id"])
         if not items:
-            st.info(f"No scrapbook photos yet for {k['name']}. Mrs. Y adds these!")
+            st.info(f"No scrapbook photos yet for {k['name']}. Ms. Megan adds these!")
             continue
         cards = ""
         for it in items:
@@ -1142,7 +1152,7 @@ def view_parent():
                             st.rerun()
                         else:
                             _record_fail("plogin")
-                            st.error("Email or password not recognized. Check with Mrs. Y.")
+                            st.error("Email or password not recognized. Check with Ms. Megan.")
             with tab_reg:
                 st.caption("First time? Use your child's 6-digit code to set up your login.")
                 with st.form("register_form"):
@@ -1154,7 +1164,7 @@ def view_parent():
                 if do_reg:
                     matches = enrolled_by_pin(rcode.strip())
                     if not matches:
-                        st.error("That code didn't match a child. Please check with Mrs. Y.")
+                        st.error("That code didn't match a child. Please check with Ms. Megan.")
                     elif any((k.get("login_password") or "") for k in matches):
                         st.error("This child is already registered. Use **Forgot password?** "
                                  "below if you need to reset it.")
@@ -1192,7 +1202,7 @@ def view_parent():
 
     kids = kids_for_login(st.session_state.get("parent_login_email", ""))
     if not kids:
-        st.error("No enrolled children found for this login. Please contact Mrs. Y.")
+        st.error("No enrolled children found for this login. Please contact Ms. Megan.")
         if st.button("Log out"):
             _parent_logout()
             st.rerun()
@@ -1215,7 +1225,7 @@ def view_parent():
                         st.rerun()
                     else:
                         _record_fail("pcode")
-                        st.error("That code didn't match. Double-check with Mrs. Y.")
+                        st.error("That code didn't match. Double-check with Ms. Megan.")
             security_reminder()
             if st.button("Log out", key="logout_code"):
                 _parent_logout()
@@ -1251,6 +1261,8 @@ def view_parent():
         if st.button("Sign out"):
             _parent_logout()
             st.rerun()
+
+    homescreen_hint()
 
 
 # ------------------------------------------------------------------ HOME
