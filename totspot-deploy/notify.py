@@ -26,7 +26,18 @@ except Exception:
     pass
 
 
-def send_email(cfg: dict, subject: str, body: str, to: str | None = None) -> tuple[bool, str]:
+def fetch(url: str):
+    """Download bytes from a URL (e.g. an Airtable attachment). None on failure."""
+    try:
+        import requests
+        r = requests.get(url, timeout=25)
+        return r.content if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def send_email(cfg: dict, subject: str, body: str, to: str | None = None,
+               attachments: list | None = None) -> tuple[bool, str]:
     recipient = to or (cfg.get("to") if cfg else None)
     if not cfg or not cfg.get("host") or not recipient:
         return False, "email not configured"
@@ -35,6 +46,13 @@ def send_email(cfg: dict, subject: str, body: str, to: str | None = None) -> tup
     msg["From"] = cfg.get("from") or cfg.get("user", "")
     msg["To"] = recipient
     msg.set_content(body)
+    import mimetypes
+    for filename, content in (attachments or []):
+        if not content:
+            continue
+        ctype, _ = mimetypes.guess_type(filename)
+        maintype, subtype = (ctype.split("/", 1) if ctype else ("application", "octet-stream"))
+        msg.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
     try:
         with smtplib.SMTP(cfg["host"], int(cfg.get("port", 587)), timeout=20) as s:
             s.starttls()
