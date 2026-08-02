@@ -92,6 +92,7 @@ EMAIL_CFG = SECRETS.get("email", {})
 CONTACT = SECRETS.get("contact", {})           # name, phone, email, address
 HANDBOOK_URL = SECRETS.get("handbook_url", "")
 APP_URL = SECRETS.get("app_url", "https://the-tot-spot.streamlit.app")
+WEBSITE_URL = SECRETS.get("website_url", "https://tubular-sawine-ac3d51.netlify.app")
 
 if "store_bundle" not in st.session_state:
     st.session_state.store_bundle = S.get_store(SECRETS)
@@ -434,6 +435,38 @@ def security_reminder():
         f"<div style='text-align:center;color:{COLORS['muted']};font-size:.85rem;margin-top:1.4rem'>"
         "🔒 For optimal security, please don't share your login info or 6-digit code with anyone.</div>",
         unsafe_allow_html=True)
+
+
+def _logo_bytes():
+    try:
+        return LOGO_PATH.read_bytes()
+    except Exception:
+        return None
+
+
+def family_emails(kids_list) -> list[str]:
+    out = []
+    for k in kids_list:
+        e = (k.get("login_email") or k.get("email") or k.get("parent2_email") or "").strip()
+        if e and e.lower() not in [x.lower() for x in out]:
+            out.append(e)
+    return out
+
+
+def notify_families(subject: str, heading: str, message: str, recipients: list[str]) -> int:
+    """Send a branded notification email (logo, portal button, footer) to each recipient."""
+    if not recipients:
+        return 0
+    html = notify.branded_email(heading, message, f"{APP_URL}/?view=parent", WEBSITE_URL, CONTACT)
+    text = f"{message}\n\nOpen the Parent Portal: {APP_URL}/?view=parent\nWebsite: {WEBSITE_URL}"
+    logo = _logo_bytes()
+    inline = [("totspotlogo", logo, "png")] if logo else None
+    sent = 0
+    for e in recipients:
+        ok, _ = notify.send_email(EMAIL_CFG, subject, text, to=e, html=html, inline_images=inline)
+        if ok:
+            sent += 1
+    return sent
 
 
 def menu_nav(options: list[str], key: str, logout: bool = False) -> str:
@@ -840,10 +873,18 @@ def view_admin():
                                             key=f"bh_{k['id']}")
                     injury = st.text_area("Injury report", existing.get("injury", ""),
                                           key=f"inj_{k['id']}")
+                    notify_parent = st.checkbox("📧 Email this family a notification", value=True,
+                                                key=f"lognotify_{k['id']}")
                     if st.form_submit_button("💾 Save daily report", type="primary"):
                         store.upsert_daily_log(k["id"], date_iso, {
                             "potty_type": pt, "potty_progress": pp, "snack": snack,
                             "mood": mood, "behavior": behavior.strip(), "injury": injury.strip()})
+                        if notify_parent:
+                            notify_families(
+                                "📋 The Tot Spot: Daily Report Update", "Daily Report Update",
+                                "Ms. Megan just added information in your daily report. "
+                                "Please log into your parent portal to view!",
+                                family_emails([k]))
                         st.success("Saved!")
                         st.rerun()
 
@@ -856,7 +897,7 @@ def view_admin():
             ann_photos = st.file_uploader("Attach newsletter / photos (PDF, PNG, JPG)",
                                           type=["png", "jpg", "jpeg", "pdf"],
                                           accept_multiple_files=True)
-            email_families = st.checkbox("📧 Email this to all enrolled families", value=True)
+            do_email = st.checkbox("📧 Email a notification to all enrolled families", value=True)
             posted = st.form_submit_button("📣 Post announcement", type="primary")
         if posted and (title or msg):
             now = S.now_local(TZ)
@@ -865,23 +906,14 @@ def view_admin():
             atts = [(f.name, f.getvalue()) for f in ann_photos] if ann_photos else []
             if atts:
                 store.add_announcement_photos(a["id"], atts)
-            sent = total = 0
-            if email_families:
-                emails = []
-                for k in enrolled:
-                    e = (k.get("login_email") or k.get("email") or k.get("parent2_email") or "").strip()
-                    if e and e.lower() not in [x.lower() for x in emails]:
-                        emails.append(e)
-                total = len(emails)
-                for e in emails:
-                    ok, _ = notify.send_email(
-                        EMAIL_CFG, f"📣 The Tot Spot: {title.strip() or 'Newsletter'}",
-                        (msg.strip() or "") + "\n\n— The Tot Spot",
-                        to=e, attachments=atts)
-                    if ok:
-                        sent += 1
+            recips = family_emails(enrolled)
+            sent = notify_families(
+                f"📣 The Tot Spot: {title.strip() or 'Newsletter'}",
+                "New Announcement",
+                "Hello! You just received an announcement from Ms. Megan on your Parent Portal.",
+                recips) if do_email else 0
             st.session_state["ann_flash"] = (
-                f"Posted!" + (f" 💌 Emailed {sent} of {total} enrolled families." if email_families else ""))
+                "Posted!" + (f" 💌 Emailed {sent} of {len(recips)} enrolled families." if do_email else ""))
             st.rerun()
         st.divider()
         for a in store.list_announcements():
@@ -1194,8 +1226,10 @@ def view_parent():
     my_cohorts = {k["cohort"] for k in kids if k["cohort"]}
     st.markdown(f"<div class='subtitle'>Welcome, family of {names}! 👋</div>", unsafe_allow_html=True)
 
+    book_count = sum(len(it["photos"]) for k in kids for it in store.list_album(k["id"]))
+    book_label = f"📖 Scrapbook ({book_count})" if book_count else "📖 Scrapbook"
     t_home, t_daily, t_news, t_profile, t_book, t_contact = st.tabs(
-        ["🏠 Home", "📋 Daily Report", "📣 News", "🪪 Profile", "📖 Scrapbook", "📇 Contact"]
+        ["🏠 Home", "📋 Daily Report", "📣 News", "🪪 Profile", book_label, "📇 Contact"]
     )
     with t_home:
         for k in kids:
