@@ -692,6 +692,22 @@ def view_signup():
                  f"Anything else: {anything_else.strip() or '—'}\n\n"
                  f"Open Admin → Waitlist to review."),
             )
+            # confirmation email to the parent
+            if email.strip():
+                conf_msg = (f"Thank you for adding {child.strip()} to The Tot Spot waitlist! "
+                            "We're so glad you're considering our play-based preschool prep program. "
+                            "Ms. Megan will personally reach out as soon as a spot opens up. "
+                            "In the meantime, feel free to explore our website or reply with any "
+                            "questions — we'd love to hear from you! 🌈")
+                logo = _logo_bytes()
+                notify.send_email(
+                    EMAIL_CFG, "🌈 Thank you for your interest in The Tot Spot!",
+                    conf_msg + f"\n\nWebsite: {WEBSITE_URL}",
+                    to=email.strip(),
+                    html=notify.branded_email("Thank you for your interest! 🌈", conf_msg,
+                                              WEBSITE_URL, WEBSITE_URL, CONTACT,
+                                              button_label="Visit our website &rarr;"),
+                    inline_images=[("totspotlogo", logo, "png")] if logo else None)
             st.success(f"Thanks! **{child}** has been added to the waitlist. 🎉")
             st.balloons()
 
