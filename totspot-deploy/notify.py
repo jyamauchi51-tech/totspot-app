@@ -26,8 +26,9 @@ except Exception:
     pass
 
 
-def branded_email(heading: str, message: str, portal_url: str,
-                  website_url: str, contact: dict) -> str:
+def branded_email(heading: str, message: str, button_url: str,
+                  website_url: str, contact: dict,
+                  button_label: str = "Open Parent Portal &rarr;") -> str:
     """A professional, on-brand HTML email body (logo referenced by cid 'totspotlogo')."""
     coral, ink, muted = "#F4978E", "#2B2B2B", "#8A94A6"
     rainbow = "linear-gradient(90deg,#F4978E,#F6B26B,#FCE38A,#A8DB8F,#9FE0DF,#C9A7E9)"
@@ -45,7 +46,7 @@ def branded_email(heading: str, message: str, portal_url: str,
      <h1 style="font-size:22px;color:{ink};margin:0 0 10px;text-align:center;font-weight:800;">{heading}</h1>
      <p style="font-size:16px;color:{ink};line-height:1.55;margin:0 0 22px;text-align:center;">{message}</p>
      <div style="text-align:center;margin:0 0 26px;">
-       <a href="{portal_url}" style="display:inline-block;background:{coral};color:#ffffff;text-decoration:none;font-weight:bold;padding:13px 30px;border-radius:999px;font-size:16px;">Open Parent Portal &rarr;</a>
+       <a href="{button_url}" style="display:inline-block;background:{coral};color:#ffffff;text-decoration:none;font-weight:bold;padding:13px 30px;border-radius:999px;font-size:16px;">{button_label}</a>
      </div>
    </td></tr>
    <tr><td style="background:#FDEBE8;padding:18px 24px;text-align:center;">
