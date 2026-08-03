@@ -665,6 +665,21 @@ def view_kiosk():
 
 
 # ------------------------------------------------------------------ SIGN-UP
+@st.dialog("🎉 Thank you!")
+def signup_thankyou(child_name: str):
+    st.markdown(
+        "<div style='text-align:center;line-height:1.6'>"
+        "<div style='font-size:3rem'>🌈</div>"
+        "<div style='font-family:\"Baloo 2\",cursive;font-weight:800;font-size:1.4rem;margin:.3rem 0'>"
+        "Thank you for your submission!</div>"
+        f"<div style='font-size:1.05rem'><b>{child_name}</b> has been added to "
+        "The Tot Spot waitlist. We've emailed you a confirmation, and Ms. Megan will "
+        "reach out as soon as a spot opens up. 💛</div></div>",
+        unsafe_allow_html=True)
+    if st.button("Close", type="primary", width="stretch"):
+        st.rerun()
+
+
 def view_signup():
     st.markdown(css(), unsafe_allow_html=True)
     logo_header()
@@ -673,7 +688,6 @@ def view_signup():
     banner()
     cols = st.columns([1, 3, 1])
     with cols[1]:
-        num_parents = st.selectbox("How many parents / guardians?", [1, 2], key="signup_np")
         with st.form("signup", clear_on_submit=True, border=True):
             cn1, cn2 = st.columns(2)
             first = cn1.text_input("Child's first name *")
@@ -689,9 +703,7 @@ def view_signup():
             phone = c1.text_input("Phone *", key="p1p")
             email = c2.text_input("Email *", key="p1e")
 
-            parent2 = parent2_phone = parent2_email = ""
-            if num_parents == 2:
-                st.markdown("**Parent / guardian 2**")
+            with st.expander("➕ Add a second parent / guardian"):
                 parent2 = st.text_input("Name", key="p2n")
                 c2a, c2b = st.columns(2)
                 parent2_phone = c2a.text_input("Phone", key="p2p")
@@ -761,8 +773,8 @@ def view_signup():
                                               WEBSITE_URL, WEBSITE_URL, CONTACT,
                                               button_label="Visit our website &rarr;"),
                     inline_images=[("totspotlogo", logo, "png")] if logo else None)
-            st.success(f"Thanks! **{child}** has been added to the waitlist. 🎉")
             st.balloons()
+            signup_thankyou(child)
 
 
 # ------------------------------------------------------------------ ADMIN
