@@ -11,6 +11,7 @@ Views chosen by the ?view= URL parameter:
 
 import base64
 import io
+import random
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +27,50 @@ st.set_page_config(page_title="The Tot Spot",
                    layout="wide", initial_sidebar_state="collapsed")
 
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.png"  # load next to app.py
+
+# warm one-liners shown after a child is checked out
+CHECKOUT_QUOTES = [
+    "Every child is a different kind of flower, and together they make a beautiful garden.",
+    "Children are not things to be molded, but people to be unfolded.",
+    "The days are long, but the years are short.",
+    "There is no love like that of a parent for a child.",
+    "Play is the highest form of learning.",
+    "Kids don't remember what you teach them — they remember who you are.",
+    "The best thing to spend on your children is your time.",
+    "Childhood is a journey, not a race.",
+    "You are your child's favorite hello and hardest goodbye.",
+    "Let them be little — they're only small once.",
+    "A happy child is a curious child.",
+    "Today's little moments become tomorrow's precious memories.",
+    "Great things start with small hands.",
+    "The way we talk to our children becomes their inner voice.",
+    "Children see magic because they look for it.",
+    "In the eyes of a child, there are seven million wonders of the world.",
+    "Encourage the effort, celebrate the growth.",
+    "A little progress each day adds up to big results.",
+    "Kindness is a language every child understands.",
+    "Behind every child who believes in themselves is a parent who believed first.",
+    "Curiosity is the wick in the candle of learning.",
+    "Mistakes are proof that they're trying.",
+    "Little by little, day by day, they grow in every way.",
+    "Tiny people, mighty hearts.",
+    "Home is where their little story begins.",
+    "Raising little ones is a big job — and you're doing great.",
+    "The best classrooms have the most laughter.",
+    "Watch a child at play and you'll see wonder in action.",
+    "Small moments, big memories.",
+    "Every day may not be good, but there's something good in every day.",
+    "Cheering your family on, today and every day.",
+    "Learning is a treasure that follows its owner everywhere.",
+    "You're doing better than you think.",
+    "The soul is healed by being with children.",
+    "Little hands and little feet, growing bigger every week.",
+    "Thanks for sharing your little one with us today.",
+    "Give them roots to grow and wings to fly.",
+    "A child's laughter is the best sound in the world.",
+    "Every child deserves someone in their corner — glad we can be part of yours.",
+    "Slow down and enjoy the little years.",
+]
 
 
 def _logo_data_uri() -> str:
@@ -547,6 +592,9 @@ def view_kiosk():
 
     if flash := st.session_state.pop("kflash", ""):
         st.success(flash)
+    if quote := st.session_state.pop("kquote", ""):
+        st.markdown(f"<div style='text-align:center;font-style:italic;color:{COLORS['muted']};"
+                    f"font-size:1.05rem;margin:.2rem 0 .6rem'>💬 {quote}</div>", unsafe_allow_html=True)
 
     pin = st.session_state.setdefault("kpin", "")
 
@@ -574,6 +622,7 @@ def view_kiosk():
                             store.set_checkout(rec["id"], S.time_str(TZ))
                             st.session_state.kflash = (f"Have a great rest of your day, {kid['name']}! "
                                                        "See you next time. 👋")
+                            st.session_state.kquote = random.choice(CHECKOUT_QUOTES)
                         else:
                             store.add_checkin(kid["id"], date_iso, S.time_str(TZ))
                             st.session_state.kflash = (f"Have a great day, {kid['name']}! "
@@ -698,7 +747,7 @@ def view_signup():
                             "We're so glad you're considering our play-based preschool prep program. "
                             "Ms. Megan will personally reach out as soon as a spot opens up. "
                             "In the meantime, feel free to explore our website or reply with any "
-                            "questions — we'd love to hear from you! 🌈")
+                            "questions — we'd love to hear from you!")
                 logo = _logo_bytes()
                 notify.send_email(
                     EMAIL_CFG, "🌈 Thank you for your interest in The Tot Spot!",
