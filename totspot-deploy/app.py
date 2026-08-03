@@ -675,7 +675,10 @@ def view_signup():
     with cols[1]:
         num_parents = st.selectbox("How many parents / guardians?", [1, 2], key="signup_np")
         with st.form("signup", clear_on_submit=True, border=True):
-            child = st.text_input("Child's name *")
+            cn1, cn2 = st.columns(2)
+            first = cn1.text_input("Child's first name *")
+            last = cn2.text_input("Child's last name *")
+            child = f"{first.strip()} {last.strip()}".strip()
             c0a, c0b = st.columns(2)
             birthdate = c0a.text_input("Child's birthdate (MM/DD/YYYY)")
             gender = c0b.selectbox("Child's gender", ["", "Male", "Female"])
@@ -684,7 +687,7 @@ def view_signup():
             parent = st.text_input("Name *", key="p1n")
             c1, c2 = st.columns(2)
             phone = c1.text_input("Phone *", key="p1p")
-            email = c2.text_input("Email", key="p1e")
+            email = c2.text_input("Email *", key="p1e")
 
             parent2 = parent2_phone = parent2_email = ""
             if num_parents == 2:
@@ -708,8 +711,9 @@ def view_signup():
             anything_else = st.text_area("Anything else you'd like to share about your child?")
             submitted = st.form_submit_button("Join the waitlist  🎉", width="stretch", type="primary")
         if submitted:
-            if not child or not parent or not phone:
-                st.error("Please fill in the required fields (*).")
+            if not first.strip() or not last.strip() or not parent or not phone or not email:
+                st.error("Please fill in all required fields (*): child's first + last name, "
+                         "parent name, phone, and email.")
                 return
             store.add_kid({
                 "name": child.strip(), "birthdate": birthdate.strip(), "gender": gender,
