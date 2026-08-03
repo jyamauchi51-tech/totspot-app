@@ -88,6 +88,11 @@ KID_FIELDS = {
     "login_email": "Login Email",
     "reset_token": "Reset Token",
     "reset_expires": "Reset Expires",
+    "special_needs": "Special Needs",
+    "structured_env": "Structured Environment",
+    "heard_about": "Heard About Us",
+    "heard_about_detail": "Heard About Detail",
+    "anything_else": "Anything Else",
 }
 KID_ATTACH_FIELD = "Enrollment Form"
 KID_PHOTO_FIELD = "Child Photo"
