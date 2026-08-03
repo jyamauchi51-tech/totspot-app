@@ -393,6 +393,12 @@ def child_details_md(k: dict, now) -> str:
     row("Allergies", k["notes"])
     row("Medications", k["medications"])
     row("Doctor", " · ".join(x for x in [k["physician"], k["physician_phone"]] if x))
+    row("Special needs", k["special_needs"])
+    row("Structured environment", k["structured_env"])
+    heard = k["heard_about"] + (f" — {k['heard_about_detail']}" if k["heard_about_detail"] else "") \
+        if k["heard_about"] else ""
+    row("Heard about us", heard)
+    row("Anything else", k["anything_else"])
     return "  \n".join(lines) if lines else "_No extra details on file yet._"
 
 
@@ -642,7 +648,15 @@ def view_signup():
             c3, c4 = st.columns(2)
             school_year = c3.selectbox("Desired school year", ["2026-2027", "2027-2028", "2028-2029"])
             cohort = c4.selectbox("Preferred cohort", ["No preference"] + COHORT_OPTIONS)
-            notes = st.text_area("Allergies / anything we should know?")
+            notes = st.text_area("Allergies (foods, medical, etc.)")
+            special_needs = st.text_area("Any special needs we should be aware of?")
+            structured_env = st.text_area(
+                "How does your child respond to a structured environment? "
+                "Is it new to them, or have there been any struggles we should be aware of?")
+            heard = st.selectbox("How did you hear about us?",
+                                 ["", "TikTok", "Facebook", "Instagram", "Word of mouth", "Google", "Other"])
+            heard_detail = st.text_input("If other, please tell us how")
+            anything_else = st.text_area("Anything else you'd like to share about your child?")
             submitted = st.form_submit_button("Join the waitlist  🎉", width="stretch", type="primary")
         if submitted:
             if not child or not parent or not phone:
@@ -655,10 +669,14 @@ def view_signup():
                 "parent2_email": parent2_email.strip(),
                 "notes": notes.strip(), "school_year": school_year,
                 "cohort": "" if cohort == "No preference" else cohort,
+                "special_needs": special_needs.strip(), "structured_env": structured_env.strip(),
+                "heard_about": heard, "heard_about_detail": heard_detail.strip(),
+                "anything_else": anything_else.strip(),
                 "status": "Waitlist", "signup_date": S.stamp(TZ),
             })
             p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, {parent2_email.strip()})\n"
                        if parent2.strip() else "")
+            heard_line = (heard + (f" — {heard_detail.strip()}" if heard == "Other" and heard_detail.strip() else "")) or "—"
             notify.send_email(
                 EMAIL_CFG,
                 f"[Tot Spot] New waitlist sign-up: {child.strip()}",
@@ -666,7 +684,12 @@ def view_signup():
                  f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
                  f"{p2_line}"
                  f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
-                 f"Cohort preference: {cohort}\nNotes: {notes.strip() or '—'}\n\n"
+                 f"Cohort preference: {cohort}\n"
+                 f"Allergies: {notes.strip() or '—'}\n"
+                 f"Special needs: {special_needs.strip() or '—'}\n"
+                 f"Structured environment: {structured_env.strip() or '—'}\n"
+                 f"Heard about us: {heard_line}\n"
+                 f"Anything else: {anything_else.strip() or '—'}\n\n"
                  f"Open Admin → Waitlist to review."),
             )
             st.success(f"Thanks! **{child}** has been added to the waitlist. 🎉")
