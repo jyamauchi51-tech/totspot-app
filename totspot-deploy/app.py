@@ -138,6 +138,28 @@ CONTACT = SECRETS.get("contact", {})           # name, phone, email, address
 HANDBOOK_URL = SECRETS.get("handbook_url", "")
 APP_URL = SECRETS.get("app_url", "https://the-tot-spot.streamlit.app")
 WEBSITE_URL = SECRETS.get("website_url", "https://tubular-sawine-ac3d51.netlify.app")
+SOCIAL = SECRETS.get("social", {}) or {
+    "instagram": "https://www.instagram.com/thehappyteacherstudio",
+    "facebook": "https://www.facebook.com/share/17fQ9iyC1j/",
+    "tiktok": "https://www.tiktok.com/@thehappyteacherstudio",
+}
+_SOCIAL_SVG = {
+    "instagram": "M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z",
+    "facebook": "M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z",
+    "tiktok": "M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z",
+}
+
+
+def social_html(color: str = "#F4978E", size: int = 30) -> str:
+    parts = []
+    for name in ("instagram", "facebook", "tiktok"):
+        url = SOCIAL.get(name)
+        if url:
+            parts.append(
+                f"<a href='{url}' target='_blank' style='margin:0 .5rem;display:inline-block'>"
+                f"<svg width='{size}' height='{size}' viewBox='0 0 24 24' fill='{color}'>"
+                f"<path d='{_SOCIAL_SVG[name]}'/></svg></a>")
+    return "<div style='text-align:center;margin-top:.7rem'>" + "".join(parts) + "</div>" if parts else ""
 
 if "store_bundle" not in st.session_state:
     st.session_state.store_bundle = S.get_store(SECRETS)
@@ -241,9 +263,9 @@ div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="sel
 .c-lav { background: __LAVENDER_BG__; } .c-teal { background: __TEAL_BG__; }
 
 div[class*="st-key-kp_"] button {
-    height: 3.5rem; font-size: 1.55rem; border-radius: .9rem; font-family:'Baloo 2';
+    height: 2.6rem; min-height:2.6rem; font-size: 1.55rem; border-radius: .8rem; font-family:'Baloo 2';
     background: __coral_bg__ !important; color: __ink__ !important;
-    border: 2px solid __coral__ !important; box-shadow: 0 2px 6px rgba(0,0,0,.10); padding:.2rem;
+    border: 2px solid __coral__ !important; box-shadow: 0 2px 6px rgba(0,0,0,.10); padding:.1rem;
 }
 div[class*="st-key-kp_"] button:hover { background:#fff !important; color:__coral__ !important; }
 div[class*="st-key-kp_"] button:active { transform: scale(.96); }
@@ -748,6 +770,8 @@ def view_signup():
                 (f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
                  f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
                  f"{p2_line}"
+                 f"Birthdate: {birthdate.strip() or '—'} "
+                 f"(age {compute_age(birthdate.strip(), S.now_local(TZ)) or '?'})\n"
                  f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
                  f"Cohort preference: {cohort}\n"
                  f"Allergies: {notes.strip() or '—'}\n"
@@ -967,6 +991,8 @@ def view_admin():
                          width="stretch", hide_index=True)
 
     with t_logs:
+        if flash := st.session_state.pop("log_flash", ""):
+            st.success(flash)
         st.caption(f"Per-child daily report for {date_iso}")
         if not enrolled:
             st.write("No enrolled children yet.")
@@ -990,16 +1016,17 @@ def view_admin():
                     notify_parent = st.checkbox("📧 Email this family a notification", value=True,
                                                 key=f"lognotify_{k['id']}")
                     if st.form_submit_button("💾 Save daily report", type="primary"):
-                        store.upsert_daily_log(k["id"], date_iso, {
-                            "potty_type": pt, "potty_progress": pp, "snack": snack,
-                            "mood": mood, "behavior": behavior.strip(), "injury": injury.strip()})
-                        if notify_parent:
-                            notify_families(
-                                "📋 The Tot Spot: Daily Report Update", "Daily Report Update",
-                                "Ms. Megan just added information in your daily report. "
-                                "Please log into your parent portal to view!",
-                                family_emails([k]))
-                        st.success("Saved!")
+                        with st.spinner("Saving…"):
+                            store.upsert_daily_log(k["id"], date_iso, {
+                                "potty_type": pt, "potty_progress": pp, "snack": snack,
+                                "mood": mood, "behavior": behavior.strip(), "injury": injury.strip()})
+                            if notify_parent:
+                                notify_families(
+                                    "📋 The Tot Spot: Daily Report Update", "Daily Report Update",
+                                    "Ms. Megan just added information in your daily report. "
+                                    "Please log into your parent portal to view!",
+                                    family_emails([k]))
+                        st.session_state["log_flash"] = f"✅ Saved {k['name']}'s daily report!"
                         st.rerun()
 
     with t_ann:
@@ -1014,20 +1041,21 @@ def view_admin():
             do_email = st.checkbox("📧 Email a notification to all enrolled families", value=True)
             posted = st.form_submit_button("📣 Post announcement", type="primary")
         if posted and (title or msg):
-            now = S.now_local(TZ)
-            a = store.add_announcement(title.strip(), msg.strip(),
-                                       now.strftime("%b ") + str(now.day) + now.strftime(", %Y"), S.stamp(TZ))
-            atts = [(f.name, f.getvalue()) for f in ann_photos] if ann_photos else []
-            if atts:
-                store.add_announcement_photos(a["id"], atts)
-            recips = family_emails(enrolled)
-            sent = notify_families(
-                f"📣 The Tot Spot: {title.strip() or 'Newsletter'}",
-                "New Announcement",
-                "Hello! You just received an announcement from Ms. Megan on your Parent Portal.",
-                recips) if do_email else 0
+            with st.spinner("Posting & emailing families…"):
+                now = S.now_local(TZ)
+                a = store.add_announcement(title.strip(), msg.strip(),
+                                           now.strftime("%b ") + str(now.day) + now.strftime(", %Y"), S.stamp(TZ))
+                atts = [(f.name, f.getvalue()) for f in ann_photos] if ann_photos else []
+                if atts:
+                    store.add_announcement_photos(a["id"], atts)
+                recips = family_emails(enrolled)
+                sent = notify_families(
+                    f"📣 The Tot Spot: {title.strip() or 'Newsletter'}",
+                    "New Announcement",
+                    "Hello! You just received an announcement from Ms. Megan on your Parent Portal.",
+                    recips) if do_email else 0
             st.session_state["ann_flash"] = (
-                "Posted!" + (f" 💌 Emailed {sent} of {len(recips)} enrolled families." if do_email else ""))
+                "✅ Announcement posted!" + (f" 💌 Emailed {sent} of {len(recips)} enrolled families." if do_email else ""))
             st.rerun()
         st.divider()
         for a in store.list_announcements():
@@ -1043,6 +1071,8 @@ def view_admin():
                 st.rerun()
 
     with t_upd:
+        if flash := st.session_state.pop("upd_flash", ""):
+            st.success(flash)
         now = S.now_local(TZ)
         meeting = cohorts_meeting_today(now)
         opts = COHORT_OPTIONS + ["All"]
@@ -1054,11 +1084,14 @@ def view_admin():
                          if k["photo_social"] == "No" and (up_cohort == "All" or k["cohort"] == up_cohort)]
             if no_social:
                 st.warning("⚠️ No social-media consent (don't post publicly): " + ", ".join(no_social))
-            if st.form_submit_button("🌈 Post update", type="primary") and (note or photos):
+            posted_upd = st.form_submit_button("🌈 Post update", type="primary")
+        if posted_upd and (note or photos):
+            with st.spinner("Posting update…"):
                 u = store.add_update(S.today_iso(TZ), note.strip(), up_cohort)
                 if photos:
                     store.add_update_photos(u["id"], [(f.name, f.getvalue()) for f in photos])
-                st.rerun()
+            st.session_state["upd_flash"] = "🌈 Daily update posted!"
+            st.rerun()
         st.divider()
         for u in store.list_updates()[:10]:
             tag = f" · {u['cohort']}" if u["cohort"] else ""
@@ -1117,6 +1150,7 @@ def contact_and_handbook():
         if CONTACT.get("address"):
             bits.append(f"📍 {CONTACT['address']}")
         st.markdown("<div class='contactbox'>" + "<br>".join(bits) + "</div>", unsafe_allow_html=True)
+        st.markdown("**Follow us**" + social_html(), unsafe_allow_html=True)
     if HANDBOOK_URL:
         st.markdown("### 📖 Parent Handbook")
         st.markdown(f"[Open the handbook]({HANDBOOK_URL})")
@@ -1243,14 +1277,30 @@ def view_parent():
             tab_login, tab_reg = st.tabs(["Log in", "Register"])
             with tab_login:
                 if not _locked("plogin"):
+                    # remember-me: read any saved email from this browser
+                    ls, saved_email = None, ""
+                    try:
+                        from streamlit_local_storage import LocalStorage
+                        ls = LocalStorage()
+                        saved_email = ls.getItem("totspot_email") or ""
+                    except Exception:
+                        ls, saved_email = None, ""
                     with st.form("login_form"):
-                        email = st.text_input("Email",
-                                              help="Tip: let your browser save your login for next time.")
+                        email = st.text_input("Email", value=saved_email)
                         pw = st.text_input("Password", type="password")
+                        remember = st.checkbox("Remember my email on this device", value=bool(saved_email))
                         do_login = st.form_submit_button("Log in", type="primary", width="stretch")
                     if do_login:
                         if authenticate(email, pw):
                             _reset_fails("plogin")
+                            if ls is not None:
+                                try:
+                                    if remember:
+                                        ls.setItem("totspot_email", email.strip().lower())
+                                    else:
+                                        ls.deleteItem("totspot_email")
+                                except Exception:
+                                    pass
                             st.session_state.parent_authed = True
                             st.session_state.parent_login_email = email.strip().lower()
                             st.rerun()
