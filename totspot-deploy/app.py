@@ -1293,14 +1293,8 @@ def view_parent():
                     if do_login:
                         if authenticate(email, pw):
                             _reset_fails("plogin")
-                            if ls is not None:
-                                try:
-                                    if remember:
-                                        ls.setItem("totspot_email", email.strip().lower())
-                                    else:
-                                        ls.deleteItem("totspot_email")
-                                except Exception:
-                                    pass
+                            st.session_state["_pending_remember"] = (
+                                email.strip().lower() if remember else "__clear__")
                             st.session_state.parent_authed = True
                             st.session_state.parent_login_email = email.strip().lower()
                             st.rerun()
@@ -1353,6 +1347,20 @@ def view_parent():
                                    "Check your inbox (and spam).")
             security_reminder()
         return
+
+    # persist / clear the remembered email now that we're on a post-login render
+    # (deferred from the login click so the browser actually writes it before rerun)
+    if "_pending_remember" in st.session_state:
+        val = st.session_state.pop("_pending_remember")
+        try:
+            from streamlit_local_storage import LocalStorage
+            _ls = LocalStorage()
+            if val == "__clear__":
+                _ls.deleteItem("totspot_email")
+            else:
+                _ls.setItem("totspot_email", val)
+        except Exception:
+            pass
 
     kids = kids_for_login(st.session_state.get("parent_login_email", ""))
     if not kids:
