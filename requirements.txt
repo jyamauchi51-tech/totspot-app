@@ -3,4 +3,5 @@ pyairtable>=2.3
 truststore
 qrcode[pil]
 streamlit-cropper
+streamlit-local-storage
 tzdata
