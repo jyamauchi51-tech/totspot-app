@@ -102,6 +102,11 @@ section{padding:3rem 0}
 .contact{text-align:center}
 .contact .info{display:flex;gap:1.4rem;justify-content:center;flex-wrap:wrap;margin:1.2rem 0 1.6rem;font-size:1.1rem;font-weight:700}
 .contact .info a{text-decoration:none}
+.social{display:flex;gap:1.1rem;justify-content:center;margin-top:1.4rem}
+.social a{display:inline-flex;width:44px;height:44px;align-items:center;justify-content:center;
+  background:#fff;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,.08);transition:transform .08s ease}
+.social a:hover{transform:translateY(-3px)}
+.social svg{width:24px;height:24px;fill:var(--coral)}
 footer{background:var(--ink);color:#fff;text-align:center;padding:1.6rem;font-weight:600}
 footer .rainbow-bar{margin-bottom:1.2rem}
 
