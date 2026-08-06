@@ -1103,18 +1103,26 @@ def view_admin():
                     pcols[i % 4].image(ph["url"], width="stretch")
 
     with t_album:
-        st.caption("Add photos + captions to a child's scrapbook (parents can print it).")
+        if flash := st.session_state.pop("album_flash", ""):
+            st.success(flash)
+        st.caption("Add photos to a child's scrapbook (parents can print it). "
+                   "You can select several photos at once.")
         kmap = {k["name"]: k["id"] for k in enrolled}
         if kmap:
             with st.form("album_add", clear_on_submit=True):
                 who = st.selectbox("Child", list(kmap.keys()))
-                cap = st.text_input("Caption")
-                aphoto = st.file_uploader("Photo", type=["png", "jpg", "jpeg"])
-                if st.form_submit_button("📖 Add to scrapbook", type="primary") and aphoto:
-                    store.add_album_photo(kmap[who], date_iso, cap.strip(),
-                                          aphoto.name, aphoto.getvalue())
-                    st.success("Added!")
-                    st.rerun()
+                cap = st.text_input("Caption (applied to all photos below — optional)")
+                aphotos = st.file_uploader("Photos", type=["png", "jpg", "jpeg"],
+                                           accept_multiple_files=True)
+                posted_album = st.form_submit_button("📖 Add to scrapbook", type="primary")
+            if posted_album and aphotos:
+                with st.spinner(f"Uploading {len(aphotos)} photo(s)…"):
+                    for f in aphotos:
+                        store.add_album_photo(kmap[who], date_iso, cap.strip(),
+                                              f.name, f.getvalue())
+                st.session_state["album_flash"] = (
+                    f"📖 Added {len(aphotos)} photo(s) to {who}'s scrapbook!")
+                st.rerun()
         else:
             st.write("No enrolled children yet.")
         st.divider()
