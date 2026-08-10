@@ -379,6 +379,20 @@ def compute_age(birthdate: str, now) -> str:
     return f"{years} yr {rem} mo" if rem else f"{years} years"
 
 
+def age_years(birthdate: str, now):
+    """Age in decimal years (float), or None if birthdate is missing/unparseable."""
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%m/%d/%y"):
+        try:
+            bd = datetime.strptime((birthdate or "").strip(), fmt)
+            break
+        except ValueError:
+            bd = None
+    if not bd:
+        return None
+    months = (now.year - bd.year) * 12 + (now.month - bd.month) - (1 if now.day < bd.day else 0)
+    return max(months, 0) / 12.0
+
+
 def id_card_html(k: dict, now) -> str:
     """A cute 'Student ID' card for the family portal (shown once a photo exists)."""
     photo = k["child_photo"][0]["url"] if k["child_photo"] else ""
@@ -939,13 +953,50 @@ def view_admin():
         wl_now = S.now_local(TZ)
         if not waitlist:
             st.write("No one on the waitlist.")
-        for pos, k in enumerate(waitlist, 1):
+        # --- filters + sort ---
+        fc1, fc2, fc3 = st.columns(3)
+        f_cohort = fc1.selectbox("Cohort", ["All", "Mon/Wed", "Tues/Thurs", "Full-Time", "No preference"],
+                                 key="wl_cohort")
+        f_gender = fc2.selectbox("Gender", ["All", "Male", "Female"], key="wl_gender")
+        f_sort = fc3.selectbox("Sort by", ["Sign-up order", "Age (youngest)", "Age (oldest)", "Name"],
+                               key="wl_sort")
+        f_year = st.selectbox("School year", ["All", "2026-2027", "2027-2028", "2028-2029"], key="wl_year")
+        age_lo, age_hi = st.slider("Age range (years)", 0.0, 6.0, (0.0, 6.0), 0.5, key="wl_age")
+        age_default = (age_lo == 0.0 and age_hi == 6.0)
+
+        def _match(k):
+            kc = k.get("cohort") or ""
+            if f_cohort == "No preference":
+                if kc not in ("", "No preference"):
+                    return False
+            elif f_cohort != "All" and kc != f_cohort:
+                return False
+            if f_gender != "All" and (k.get("gender") or "") != f_gender:
+                return False
+            if f_year != "All" and (k.get("school_year") or "") != f_year:
+                return False
+            ay = age_years(k.get("birthdate"), wl_now)
+            if ay is None:
+                return age_default  # unknown age only shows when age filter is wide open
+            return age_lo <= ay <= age_hi
+
+        rows = [k for k in waitlist if _match(k)]
+        if f_sort == "Name":
+            rows.sort(key=lambda k: k["name"].lower())
+        elif f_sort.startswith("Age"):
+            rows.sort(key=lambda k: (age_years(k.get("birthdate"), wl_now) is None,
+                                     age_years(k.get("birthdate"), wl_now) or 0),
+                      reverse=(f_sort == "Age (oldest)"))
+        st.caption(f"Showing {len(rows)} of {len(waitlist)} on the waitlist.")
+
+        for pos, k in enumerate(rows, 1):
             c1, c2, c3 = st.columns([5, 1, 1])
-            pref = f" · prefers {k['cohort']}" if k["cohort"] else ""
             age = compute_age(k["birthdate"], wl_now)
             agestr = f"  ({age})" if age else ""
+            meta = " · ".join(x for x in [k.get("gender"),
+                                          (f"prefers {k['cohort']}" if k.get("cohort") else "")] if x)
             c1.markdown(f"**{pos}. {k['name']}**{agestr} — {k['parent_name']} · {k['phone']}"
-                        f"  \n🗓️ signed up {k['signup_date'] or '?'}{pref}"
+                        f"  \n🗓️ signed up {k['signup_date'] or '?'}" + (f" · {meta}" if meta else "")
                         + (f"  \n_{k['notes']}_" if k["notes"] else ""))
             if c2.button("Enroll ✅", key=f"enroll_{k['id']}", width="stretch"):
                 store.update_kid_status(k["id"], "Enrolled")
