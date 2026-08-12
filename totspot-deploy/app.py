@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import notify
 import store as S
@@ -615,8 +616,79 @@ def _reset_fails(scope: str):
 
 
 # ------------------------------------------------------------------ KIOSK (PIN)
+_WCODE = {
+    0: ("☀️", "Clear"), 1: ("🌤️", "Mainly clear"), 2: ("⛅", "Partly cloudy"), 3: ("☁️", "Overcast"),
+    45: ("🌫️", "Fog"), 48: ("🌫️", "Fog"), 51: ("🌦️", "Drizzle"), 53: ("🌦️", "Drizzle"),
+    55: ("🌦️", "Drizzle"), 56: ("🌧️", "Freezing drizzle"), 57: ("🌧️", "Freezing drizzle"),
+    61: ("🌧️", "Light rain"), 63: ("🌧️", "Rain"), 65: ("🌧️", "Heavy rain"),
+    66: ("🌧️", "Freezing rain"), 67: ("🌧️", "Freezing rain"),
+    71: ("🌨️", "Light snow"), 73: ("🌨️", "Snow"), 75: ("🌨️", "Heavy snow"), 77: ("🌨️", "Snow grains"),
+    80: ("🌦️", "Showers"), 81: ("🌦️", "Showers"), 82: ("⛈️", "Heavy showers"),
+    85: ("🌨️", "Snow showers"), 86: ("🌨️", "Snow showers"),
+    95: ("⛈️", "Thunderstorm"), 96: ("⛈️", "Thunderstorm"), 99: ("⛈️", "Thunderstorm"),
+}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_weather():
+    """Current weather for Surprise, AZ (85388) via free Open-Meteo API. None on failure."""
+    try:
+        import requests
+        r = requests.get("https://api.open-meteo.com/v1/forecast",
+                         params={"latitude": 33.6292, "longitude": -112.3680,
+                                 "current": "temperature_2m,weather_code",
+                                 "temperature_unit": "fahrenheit", "timezone": "America/Phoenix"},
+                         timeout=8)
+        if r.status_code == 200:
+            c = r.json().get("current", {})
+            if c.get("temperature_2m") is not None:
+                return {"temp": round(c["temperature_2m"]), "code": c.get("weather_code", 0)}
+    except Exception:
+        pass
+    return None
+
+
+_DASH_HTML = """
+<div id="totdash">
+<style>
+#totdash{font-family:'Baloo 2','Nunito',sans-serif}
+#totdash .bar{display:flex;justify-content:space-between;align-items:center;background:#fff;
+  border:1px solid #ECEFF4;border-radius:1.2rem;padding:.6rem 1.3rem;box-shadow:0 4px 14px rgba(0,0,0,.06)}
+#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.95rem}
+#totdash #tdclock,#totdash .wx{font-size:2rem;font-weight:800;color:#2B2B2B;line-height:1.1}
+</style>
+<div class="bar">
+  <div><div id="tdclock">--:--</div><div id="tddate" class="lbl"></div></div>
+  <div style="text-align:right">__WEATHER__</div>
+</div>
+</div>
+<script>
+(function(){function u(){var n=new Date();var c=document.getElementById('tdclock');if(!c)return;
+ c.textContent=n.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+ document.getElementById('tddate').textContent=n.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});}
+ u();if(window._totClock)clearInterval(window._totClock);window._totClock=setInterval(u,1000);})();
+</script>
+"""
+
+
+def kiosk_dashboard():
+    w = get_weather()
+    if w:
+        emoji, desc = _WCODE.get(w["code"], ("🌡️", ""))
+        weather = (f"<div class='wx'>{emoji} {w['temp']}°F</div>"
+                   f"<div class='lbl'>{desc} · Surprise, AZ</div>")
+    else:
+        weather = "<div class='lbl'>Weather unavailable</div>"
+    try:
+        st.html(_DASH_HTML.replace("__WEATHER__", weather), unsafe_allow_javascript=True)
+    except TypeError:
+        # older Streamlit without the JS flag: fall back to the components iframe
+        components.html(_DASH_HTML.replace("__WEATHER__", weather), height=90)
+
+
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
+    kiosk_dashboard()
     logo_header(max_width=380)
     now = S.now_local(TZ)
     st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:800;"
