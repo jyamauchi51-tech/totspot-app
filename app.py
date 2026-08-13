@@ -704,21 +704,25 @@ _DASH_HTML = """
 <div id="totdash">
 <style>
 #totdash{font-family:'Baloo 2','Nunito',sans-serif}
-#totdash .row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:0 .2rem}
-#totdash .side{flex:1 1 0;min-width:0}
-#totdash .r{text-align:right}
-#totdash .mid{flex:0 0 auto;text-align:center;padding:0 .3rem}
-#totdash .mid img{width:34vw;max-width:250px;max-height:112px;object-fit:contain}
-#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.85rem;line-height:1.15}
-#totdash #tdclock,#totdash .wx{font-size:1.75rem;font-weight:800;color:#2B2B2B;line-height:1.05}
+/* cluster time + logo + weather together in the center (not a full-width bar) */
+#totdash .row{display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;gap:1.4rem;padding:0 .2rem}
+#totdash .side{flex:0 0 auto;min-width:0}
+#totdash .l{text-align:right}
+#totdash .r{text-align:left}
+#totdash .mid{flex:0 0 auto;text-align:center;padding:0 .2rem}
+#totdash .mid img{width:32vw;max-width:250px;max-height:112px;object-fit:contain}
+#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.82rem;line-height:1.15}
+#totdash #tdclock,#totdash .wx{font-size:1.5rem;font-weight:800;color:#2B2B2B;line-height:1.05}
 #totdash .wx{white-space:nowrap}
-@media(max-width:540px){
-  #totdash #tdclock,#totdash .wx{font-size:1.2rem}
-  #totdash .lbl{font-size:.72rem}
+@media(max-width:600px){
+  #totdash .row{gap:.8rem}
+  #totdash #tdclock,#totdash .wx{font-size:1.1rem}
+  #totdash .lbl{font-size:.68rem}
+  #totdash .mid img{width:40vw}
 }
 </style>
 <div class="row">
-  <div class="side"><div id="tdclock">--:--</div><div id="tddate" class="lbl"></div></div>
+  <div class="side l"><div id="tdclock">--:--</div><div id="tddate" class="lbl"></div></div>
   <div class="mid">__LOGOIMG__</div>
   <div class="side r">__WEATHER__</div>
 </div>
