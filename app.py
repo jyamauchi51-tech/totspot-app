@@ -711,14 +711,13 @@ _DASH_HTML = """
 #totdash .r{text-align:left}
 #totdash .mid{flex:0 0 auto;text-align:center;padding:0 .2rem}
 #totdash .mid img{width:32vw;max-width:250px;max-height:112px;object-fit:contain}
-#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.82rem;line-height:1.15}
-#totdash #tdclock,#totdash .wx{font-size:1.5rem;font-weight:800;color:#2B2B2B;line-height:1.05}
+#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.72rem;line-height:1.1}
+#totdash #tdclock,#totdash .wx{font-size:1.2rem;font-weight:800;color:#2B2B2B;line-height:1.05}
 #totdash .wx{white-space:nowrap}
 @media(max-width:600px){
-  #totdash .row{gap:.8rem}
-  #totdash #tdclock,#totdash .wx{font-size:1.1rem}
-  #totdash .lbl{font-size:.68rem}
-  #totdash .mid img{width:40vw}
+  #totdash .row{gap:.7rem}
+  #totdash #tdclock,#totdash .wx{font-size:1rem}
+  #totdash .lbl{font-size:.62rem}
 }
 </style>
 <div class="row">
@@ -804,14 +803,25 @@ def kiosk_keypad():
 
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
-    # pull everything up: logo now shares the top row with the time & weather,
-    # so the keypad sits higher and fits on the iPad screen
-    st.markdown("<style>.block-container{padding-top:.4rem !important;margin-top:.2rem !important}"
-                "div[data-testid='stVerticalBlock']{gap:.25rem !important}</style>",
-                unsafe_allow_html=True)
+    # Shrink EVERYTHING on the kiosk except the logo so the whole check-in fits
+    # one screen with no scrolling. Scoped to this page only (kiosk is the only
+    # view rendered here), so other pages keep their normal sizes.
+    st.markdown(
+        "<style>"
+        ".block-container{padding-top:.3rem !important;margin-top:.1rem !important;"
+        "padding-bottom:.5rem !important}"
+        "div[data-testid='stVerticalBlock']{gap:.15rem !important}"
+        ".pindots{font-size:1.15rem !important;margin:.05rem 0 .1rem !important}"
+        ".subtitle{font-size:.8rem !important;margin:0 0 .2rem !important}"
+        "div[class*='st-key-kp_'] button{height:2.05rem !important;min-height:2.05rem !important;"
+        "font-size:1.25rem !important;padding:0 !important}"
+        ".bigcard{padding:.5rem .8rem !important;margin:.2rem 0 !important}"
+        ".bigcard h2{font-size:1.3rem !important;margin:0 !important}"
+        "</style>",
+        unsafe_allow_html=True)
     kiosk_dashboard()
-    st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:800;"
-                "font-size:1.05rem;color:#2B2B2B;margin:.1rem 0 0\">Welcome! Please check in below 👋</div>",
+    st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:700;"
+                "font-size:.8rem;color:#6C7684;margin:.05rem 0 0\">Welcome! Please check in below 👋</div>",
                 unsafe_allow_html=True)
     banner()
 
