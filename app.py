@@ -754,6 +754,54 @@ def kiosk_dashboard():
         components.html(html, height=130)
 
 
+# --- fast keypad -------------------------------------------------------------
+# st.fragment makes a key tap re-run ONLY the keypad, not the whole app
+# (no weather refetch, no CSS re-inject, no dashboard/clock re-mount) -> snappy,
+# and no full-page flicker. on_click callbacks fire before the rerun.
+_fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment", None)
+if _fragment is None:  # very old Streamlit: fall back to a plain pass-through
+    def _fragment(func=None, **_kw):
+        return func if func else (lambda f: f)
+
+
+def _kp_press(d):
+    if len(st.session_state.get("kpin", "")) < PIN_LEN:
+        st.session_state.kpin = st.session_state.get("kpin", "") + d
+
+
+def _kp_clear():
+    st.session_state.kpin = ""
+
+
+def _kp_back():
+    st.session_state.kpin = st.session_state.get("kpin", "")[:-1]
+
+
+@_fragment
+def kiosk_keypad():
+    cols = st.columns([1, 2, 1])
+    with cols[1]:
+        if _locked("kiosk"):
+            return
+        pin = st.session_state.get("kpin", "")
+        if len(pin) == PIN_LEN:
+            st.rerun()  # code complete -> full rerun so the check-in card shows
+            return
+        dots = "".join("●" if i < len(pin) else "○" for i in range(PIN_LEN))
+        st.markdown(f"<div class='pindots'>{dots}</div>", unsafe_allow_html=True)
+        st.markdown("<div class='subtitle'>Enter your 6-digit family code</div>",
+                    unsafe_allow_html=True)
+        for row in (["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]):
+            rc = st.columns(3)
+            for i, d in enumerate(row):
+                rc[i].button(d, key=f"kp_{d}", width="stretch",
+                             on_click=_kp_press, args=(d,))
+        rc = st.columns(3)
+        rc[0].button("Clear", key="kp_clear", width="stretch", on_click=_kp_clear)
+        rc[1].button("0", key="kp_0", width="stretch", on_click=_kp_press, args=("0",))
+        rc[2].button("⌫", key="kp_back", width="stretch", on_click=_kp_back)
+
+
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
     # pull everything up: logo now shares the top row with the time & weather,
@@ -811,34 +859,8 @@ def view_kiosk():
                 st.rerun()
         return
 
-    # keypad
-    cols = st.columns([1, 2, 1])
-    with cols[1]:
-        if _locked("kiosk"):
-            return
-        dots = "".join("●" if i < len(pin) else "○" for i in range(PIN_LEN))
-        st.markdown(f"<div class='pindots'>{dots}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='subtitle'>Enter your 6-digit family code</div>", unsafe_allow_html=True)
-
-        def press(d):
-            if len(st.session_state.kpin) < PIN_LEN:
-                st.session_state.kpin += d
-                st.rerun()
-
-        for row in (["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]):
-            rc = st.columns(3)
-            for i, d in enumerate(row):
-                if rc[i].button(d, key=f"kp_{d}", width="stretch"):
-                    press(d)
-        rc = st.columns(3)
-        if rc[0].button("Clear", key="kp_clear", width="stretch"):
-            st.session_state.kpin = ""
-            st.rerun()
-        if rc[1].button("0", key="kp_0", width="stretch"):
-            press("0")
-        if rc[2].button("⌫", key="kp_back", width="stretch"):
-            st.session_state.kpin = st.session_state.kpin[:-1]
-            st.rerun()
+    # keypad — isolated in a fragment so each tap only re-runs the keypad
+    kiosk_keypad()
 
 
 # ------------------------------------------------------------------ SIGN-UP
