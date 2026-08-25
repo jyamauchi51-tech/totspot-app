@@ -825,16 +825,16 @@ def checkin_grid(enrolled: list[dict]):
                 f"url('{img}');background-size:cover;background-position:center;color:#fff;"
                 "text-shadow:0 1px 6px rgba(0,0,0,.95);")
         rules.append(sel + "{" + face +
-                     f"width:100%;aspect-ratio:4/5;border-radius:50%;border:7px solid {ring};"
-                     "box-shadow:0 8px 20px rgba(0,0,0,.14);display:flex;align-items:flex-end;"
-                     "justify-content:center;padding:0 .4rem .9rem;font-family:'Baloo 2';"
-                     "font-weight:800;font-size:1.55rem;line-height:1.15;white-space:normal;"
-                     "transition:transform .07s ease;}")
-        rules.append(sel + ":hover{transform:translateY(-4px);border-color:#F4978E;}")
+                     f"width:100%;max-width:140px;margin:0 auto;aspect-ratio:4/5;border-radius:50%;"
+                     f"border:5px solid {ring};box-shadow:0 6px 16px rgba(0,0,0,.13);display:flex;"
+                     "align-items:flex-end;justify-content:center;padding:0 .3rem .5rem;"
+                     "font-family:'Baloo 2';font-weight:800;font-size:1.1rem;line-height:1.1;"
+                     "white-space:normal;transition:transform .07s ease;}")
+        rules.append(sel + ":hover{transform:translateY(-3px);border-color:#F4978E;}")
         rules.append(sel + ":active{transform:scale(.96);}")
     st.markdown("<style>" + "".join(rules) + "</style>", unsafe_allow_html=True)
 
-    per_row = 4
+    per_row = 5
     for i in range(0, len(enrolled), per_row):
         cols = st.columns(per_row)
         for j, k in enumerate(enrolled[i:i + per_row]):
@@ -847,12 +847,12 @@ def checkin_grid(enrolled: list[dict]):
                 if r and not r.get("check_out"):
                     st.markdown(
                         f"<div style='text-align:center;color:#5FA84E;font-weight:800;"
-                        f"font-size:.95rem;margin-top:-.1rem'>🟢 In {r['check_in']}</div>",
+                        f"font-size:.8rem;margin-top:-.1rem'>🟢 In {r['check_in']}</div>",
                         unsafe_allow_html=True)
                 elif r and r.get("check_out"):
                     st.markdown(
                         f"<div style='text-align:center;color:#8A94A6;font-weight:700;"
-                        f"font-size:.85rem;margin-top:-.1rem'>In {r['check_in']} &middot; "
+                        f"font-size:.72rem;margin-top:-.1rem'>In {r['check_in']} &middot; "
                         f"Out {r['check_out']}</div>", unsafe_allow_html=True)
 
 
