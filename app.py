@@ -806,15 +806,14 @@ def _ci_toggle(kid_id: str, first: str):
 
 def checkin_grid(enrolled: list[dict]):
     if not enrolled:
-        st.info("No enrolled children yet. Enroll kids on the Admin page, then add their "
-                "photos in Admin → 📸 Photos.")
+        st.info("No children are scheduled for check-in today.")
         return
     date_iso = S.today_iso(TZ)
     todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
 
     def inside(k):
-        rec = todays.get(k["id"])
-        return rec is not None and not rec.get("check_out")
+        r = todays.get(k["id"])
+        return r is not None and not r.get("check_out")
 
     # per-child styling: turn each button into a big tappable oval photo
     rules = []
@@ -822,30 +821,39 @@ def checkin_grid(enrolled: list[dict]):
         img = k["child_photo"][0]["url"] if k["child_photo"] else avatar_uri(k.get("gender"))
         ring = "#7DBE6A" if inside(k) else "#EAD9F2"
         sel = f'div[class*="st-key-ci_{k["id"]}"] button'
-        face = ("background-image:linear-gradient(rgba(0,0,0,0) 52%,rgba(0,0,0,.6)),"
+        face = ("background-image:linear-gradient(rgba(0,0,0,0) 46%,rgba(0,0,0,.66)),"
                 f"url('{img}');background-size:cover;background-position:center;color:#fff;"
-                "text-shadow:0 1px 5px rgba(0,0,0,.9);")
+                "text-shadow:0 1px 6px rgba(0,0,0,.95);")
         rules.append(sel + "{" + face +
-                     f"width:100%;aspect-ratio:4/5;border-radius:50%;border:6px solid {ring};"
-                     "box-shadow:0 6px 18px rgba(0,0,0,.12);display:flex;align-items:flex-end;"
-                     "justify-content:center;padding:0 .4rem .7rem;font-family:'Baloo 2';"
-                     "font-weight:800;font-size:1.25rem;line-height:1.15;white-space:normal;"
-                     "transition:transform .06s ease;}")
-        rules.append(sel + ":hover{transform:translateY(-3px);border-color:#F4978E;}")
-        rules.append(sel + ":active{transform:scale(.97);}")
+                     f"width:100%;aspect-ratio:4/5;border-radius:50%;border:7px solid {ring};"
+                     "box-shadow:0 8px 20px rgba(0,0,0,.14);display:flex;align-items:flex-end;"
+                     "justify-content:center;padding:0 .4rem .9rem;font-family:'Baloo 2';"
+                     "font-weight:800;font-size:1.55rem;line-height:1.15;white-space:normal;"
+                     "transition:transform .07s ease;}")
+        rules.append(sel + ":hover{transform:translateY(-4px);border-color:#F4978E;}")
+        rules.append(sel + ":active{transform:scale(.96);}")
     st.markdown("<style>" + "".join(rules) + "</style>", unsafe_allow_html=True)
 
-    st.markdown("<div class='subtitle' style='text-align:center'>Tap a child to check them "
-                "in or out 👇</div>", unsafe_allow_html=True)
     per_row = 4
     for i in range(0, len(enrolled), per_row):
         cols = st.columns(per_row)
         for j, k in enumerate(enrolled[i:i + per_row]):
             nm = (k["name"] or "").strip()
             first = nm.split()[0] if nm else "?"
-            label = ("🟢 " if inside(k) else "") + first
-            cols[j].button(label, key=f"ci_{k['id']}", width="stretch",
-                           on_click=_ci_toggle, args=(k["id"], first))
+            r = todays.get(k["id"])
+            with cols[j]:
+                st.button(first, key=f"ci_{k['id']}", width="stretch",
+                          on_click=_ci_toggle, args=(k["id"], first))
+                if r and not r.get("check_out"):
+                    st.markdown(
+                        f"<div style='text-align:center;color:#5FA84E;font-weight:800;"
+                        f"font-size:.95rem;margin-top:-.1rem'>🟢 In {r['check_in']}</div>",
+                        unsafe_allow_html=True)
+                elif r and r.get("check_out"):
+                    st.markdown(
+                        f"<div style='text-align:center;color:#8A94A6;font-weight:700;"
+                        f"font-size:.85rem;margin-top:-.1rem'>In {r['check_in']} &middot; "
+                        f"Out {r['check_out']}</div>", unsafe_allow_html=True)
 
 
 def view_kiosk():
@@ -877,21 +885,7 @@ def view_kiosk():
 
     enrolled = [k for k in store.list_kids() if k["status"] == "Enrolled"]
     enrolled.sort(key=lambda k: (k["name"] or "").lower())
-    now = S.now_local(TZ)
-    show_all = st.checkbox("Show all enrolled kids (not just today's)", key="kiosk_show_all")
-    if show_all:
-        shown = enrolled
-        st.caption(f"Showing all {len(enrolled)} enrolled kids.")
-    else:
-        shown = enrolled_for_today(enrolled, now)
-        meeting = cohorts_meeting_today(now)
-        if meeting:
-            st.caption(f"Showing {len(shown)} kid(s) scheduled for "
-                       f"{now.strftime('%A')} ({' & '.join(meeting)}).")
-        else:
-            st.caption(f"No classes are scheduled for {now.strftime('%A')}. "
-                       "Tick the box above to show everyone.")
-    checkin_grid(shown)
+    checkin_grid(enrolled_for_today(enrolled, S.now_local(TZ)))
 
 
 # ------------------------------------------------------------------ SIGN-UP
