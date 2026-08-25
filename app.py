@@ -965,54 +965,77 @@ def view_signup():
                 st.error("Please fill in all required fields (*): child's first + last name, "
                          "parent name, phone, and email.")
                 return
-            store.add_kid({
-                "name": child.strip(), "birthdate": birthdate.strip(), "gender": gender,
-                "parent_name": parent.strip(), "phone": phone.strip(), "email": email.strip(),
-                "parent2_name": parent2.strip(), "parent2_phone": parent2_phone.strip(),
-                "parent2_email": parent2_email.strip(),
-                "notes": notes.strip(), "school_year": school_year,
-                "cohort": "" if cohort == "No preference" else cohort,
-                "special_needs": special_needs.strip(), "structured_env": structured_env.strip(),
-                "heard_about": heard, "heard_about_detail": heard_detail.strip(),
-                "anything_else": anything_else.strip(),
-                "status": "Waitlist", "signup_date": S.stamp(TZ),
-            })
-            p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, {parent2_email.strip()})\n"
-                       if parent2.strip() else "")
-            heard_line = (heard + (f" — {heard_detail.strip()}" if heard == "Other" and heard_detail.strip() else "")) or "—"
-            notify.send_email(
-                EMAIL_CFG,
-                f"[Tot Spot] New waitlist sign-up: {child.strip()}",
-                (f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
-                 f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
-                 f"{p2_line}"
-                 f"Birthdate: {birthdate.strip() or '—'} "
-                 f"(age {compute_age(birthdate.strip(), S.now_local(TZ)) or '?'})\n"
-                 f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
-                 f"Cohort preference: {cohort}\n"
-                 f"Allergies: {notes.strip() or '—'}\n"
-                 f"Special needs: {special_needs.strip() or '—'}\n"
-                 f"Structured environment: {structured_env.strip() or '—'}\n"
-                 f"Heard about us: {heard_line}\n"
-                 f"Anything else: {anything_else.strip() or '—'}\n\n"
-                 f"Open Admin → Waitlist to review."),
-            )
-            # confirmation email to the parent
-            if email.strip():
-                conf_msg = (f"Thank you for adding {child.strip()} to The Tot Spot waitlist! "
-                            "We're so glad you're considering our play-based preschool prep program. "
-                            "Ms. Megan will personally reach out as soon as a spot opens up. "
-                            "In the meantime, feel free to explore our website or reply with any "
-                            "questions — we'd love to hear from you!")
-                logo = _logo_bytes()
-                notify.send_email(
-                    EMAIL_CFG, "🌈 Thank you for your interest in The Tot Spot!",
-                    conf_msg + f"\n\nWebsite: {WEBSITE_URL}",
-                    to=email.strip(),
-                    html=notify.branded_email("Thank you for your interest! 🌈", conf_msg,
-                                              WEBSITE_URL, WEBSITE_URL, CONTACT,
-                                              button_label="Visit our website &rarr;"),
-                    inline_images=[("totspotlogo", logo, "png")] if logo else None)
+            # 1) SAVE FIRST — this is the only step that must succeed.
+            saved = False
+            with st.spinner("Adding your child to our waitlist…"):
+                try:
+                    store.add_kid({
+                        "name": child.strip(), "birthdate": birthdate.strip(), "gender": gender,
+                        "parent_name": parent.strip(), "phone": phone.strip(), "email": email.strip(),
+                        "parent2_name": parent2.strip(), "parent2_phone": parent2_phone.strip(),
+                        "parent2_email": parent2_email.strip(),
+                        "notes": notes.strip(), "school_year": school_year,
+                        "cohort": "" if cohort == "No preference" else cohort,
+                        "special_needs": special_needs.strip(), "structured_env": structured_env.strip(),
+                        "heard_about": heard, "heard_about_detail": heard_detail.strip(),
+                        "anything_else": anything_else.strip(),
+                        "status": "Waitlist", "signup_date": S.stamp(TZ),
+                    })
+                    saved = True
+                except Exception:
+                    saved = False
+
+                # 2) Emails are BEST-EFFORT — a mail hiccup must never block the sign-up.
+                if saved:
+                    p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, "
+                               f"{parent2_email.strip()})\n" if parent2.strip() else "")
+                    heard_line = (heard + (f" — {heard_detail.strip()}"
+                                  if heard == "Other" and heard_detail.strip() else "")) or "—"
+                    try:
+                        notify.send_email(
+                            EMAIL_CFG,
+                            f"[Tot Spot] New waitlist sign-up: {child.strip()}",
+                            (f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
+                             f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
+                             f"{p2_line}"
+                             f"Birthdate: {birthdate.strip() or '—'} "
+                             f"(age {compute_age(birthdate.strip(), S.now_local(TZ)) or '?'})\n"
+                             f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
+                             f"Cohort preference: {cohort}\n"
+                             f"Allergies: {notes.strip() or '—'}\n"
+                             f"Special needs: {special_needs.strip() or '—'}\n"
+                             f"Structured environment: {structured_env.strip() or '—'}\n"
+                             f"Heard about us: {heard_line}\n"
+                             f"Anything else: {anything_else.strip() or '—'}\n\n"
+                             f"Open Admin → Waitlist to review."),
+                        )
+                    except Exception:
+                        pass
+                    if email.strip():
+                        try:
+                            conf_msg = (f"Thank you for adding {child.strip()} to The Tot Spot "
+                                        "waitlist! We're so glad you're considering our play-based "
+                                        "preschool prep program. Ms. Megan will personally reach out "
+                                        "as soon as a spot opens up. In the meantime, feel free to "
+                                        "explore our website or reply with any questions — we'd love "
+                                        "to hear from you!")
+                            logo = _logo_bytes()
+                            notify.send_email(
+                                EMAIL_CFG, "🌈 Thank you for your interest in The Tot Spot!",
+                                conf_msg + f"\n\nWebsite: {WEBSITE_URL}",
+                                to=email.strip(),
+                                html=notify.branded_email("Thank you for your interest! 🌈", conf_msg,
+                                                          WEBSITE_URL, WEBSITE_URL, CONTACT,
+                                                          button_label="Visit our website &rarr;"),
+                                inline_images=[("totspotlogo", logo, "png")] if logo else None)
+                        except Exception:
+                            pass
+            # 3) Confirm to the parent based ONLY on whether the save worked.
+            if not saved:
+                fallback = CONTACT.get("email") or "contactthetotspot@gmail.com"
+                st.error(f"Sorry — we couldn't save your sign-up just now. Please try again in a "
+                         f"moment, or email us at {fallback} and we'll add you right away.")
+                return
             st.balloons()
             signup_thankyou(child)
 
