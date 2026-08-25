@@ -753,124 +753,100 @@ def kiosk_dashboard():
         components.html(html, height=130)
 
 
-# --- fast keypad -------------------------------------------------------------
-# st.fragment makes a key tap re-run ONLY the keypad, not the whole app
-# (no weather refetch, no CSS re-inject, no dashboard/clock re-mount) -> snappy,
-# and no full-page flicker. on_click callbacks fire before the rerun.
-_fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment", None)
-if _fragment is None:  # very old Streamlit: fall back to a plain pass-through
-    def _fragment(func=None, **_kw):
-        return func if func else (lambda f: f)
+# --- photo check-in grid -----------------------------------------------------
+# One tap per child (no laggy per-digit keypad). Each child's oval photo IS the
+# tap target; tapping toggles them in/out. Full rerun per tap is fine now that a
+# check-in is a single action rather than 6 keystrokes.
+def _ci_toggle(kid_id: str, first: str):
+    date_iso = S.today_iso(TZ)
+    todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
+    rec = todays.get(kid_id)
+    if rec is not None and not rec.get("check_out"):
+        store.set_checkout(rec["id"], S.time_str(TZ))
+        st.session_state.kflash = f"Have a great rest of your day, {first}! See you next time. 👋"
+        st.session_state.kquote = random.choice(CHECKOUT_QUOTES)
+    else:
+        store.add_checkin(kid_id, date_iso, S.time_str(TZ))
+        st.session_state.kflash = f"Have a great day, {first}! See you in a few. 🌈"
 
 
-def _kp_press(d):
-    if len(st.session_state.get("kpin", "")) < PIN_LEN:
-        st.session_state.kpin = st.session_state.get("kpin", "") + d
+def checkin_grid(enrolled: list[dict]):
+    if not enrolled:
+        st.info("No enrolled children yet. Enroll kids on the Admin page, then add their "
+                "photos in Admin → 📸 Photos.")
+        return
+    date_iso = S.today_iso(TZ)
+    todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
 
+    def inside(k):
+        rec = todays.get(k["id"])
+        return rec is not None and not rec.get("check_out")
 
-def _kp_clear():
-    st.session_state.kpin = ""
+    # per-child styling: turn each button into a big tappable oval photo
+    rules = []
+    for k in enrolled:
+        url = k["child_photo"][0]["url"] if k["child_photo"] else ""
+        ring = "#7DBE6A" if inside(k) else "#EAD9F2"
+        sel = f'div[class*="st-key-ci_{k["id"]}"] button'
+        if url:
+            face = ("background-image:linear-gradient(rgba(0,0,0,0) 50%,rgba(0,0,0,.62)),"
+                    f"url('{url}');background-size:cover;background-position:center;color:#fff;"
+                    "text-shadow:0 1px 5px rgba(0,0,0,.9);")
+        else:
+            face = "background:linear-gradient(135deg,#FDEBE8,#E7F7F6);color:#2B2B2B;"
+        rules.append(sel + "{" + face +
+                     f"width:100%;aspect-ratio:4/5;border-radius:50%;border:6px solid {ring};"
+                     "box-shadow:0 6px 18px rgba(0,0,0,.12);display:flex;align-items:flex-end;"
+                     "justify-content:center;padding:0 .4rem .7rem;font-family:'Baloo 2';"
+                     "font-weight:800;font-size:1.25rem;line-height:1.15;white-space:normal;"
+                     "transition:transform .06s ease;}")
+        rules.append(sel + ":hover{transform:translateY(-3px);border-color:#F4978E;}")
+        rules.append(sel + ":active{transform:scale(.97);}")
+    st.markdown("<style>" + "".join(rules) + "</style>", unsafe_allow_html=True)
 
-
-def _kp_back():
-    st.session_state.kpin = st.session_state.get("kpin", "")[:-1]
-
-
-@_fragment
-def kiosk_keypad():
-    cols = st.columns([1, 2, 1])
-    with cols[1]:
-        if _locked("kiosk"):
-            return
-        pin = st.session_state.get("kpin", "")
-        if len(pin) == PIN_LEN:
-            st.rerun()  # code complete -> full rerun so the check-in card shows
-            return
-        dots = "".join("●" if i < len(pin) else "○" for i in range(PIN_LEN))
-        st.markdown(f"<div class='pindots'>{dots}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='subtitle'>Enter your 6-digit family code</div>",
-                    unsafe_allow_html=True)
-        for row in (["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]):
-            rc = st.columns(3)
-            for i, d in enumerate(row):
-                rc[i].button(d, key=f"kp_{d}", width="stretch",
-                             on_click=_kp_press, args=(d,))
-        rc = st.columns(3)
-        rc[0].button("Clear", key="kp_clear", width="stretch", on_click=_kp_clear)
-        rc[1].button("0", key="kp_0", width="stretch", on_click=_kp_press, args=("0",))
-        rc[2].button("⌫", key="kp_back", width="stretch", on_click=_kp_back)
+    st.markdown("<div class='subtitle' style='text-align:center'>Tap a child to check them "
+                "in or out 👇</div>", unsafe_allow_html=True)
+    per_row = 4
+    for i in range(0, len(enrolled), per_row):
+        cols = st.columns(per_row)
+        for j, k in enumerate(enrolled[i:i + per_row]):
+            nm = (k["name"] or "").strip()
+            first = nm.split()[0] if nm else "?"
+            label = ("🟢 " if inside(k) else "") + first
+            cols[j].button(label, key=f"ci_{k['id']}", width="stretch",
+                           on_click=_ci_toggle, args=(k["id"], first))
 
 
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
-    # Shrink EVERYTHING on the kiosk except the logo so the whole check-in fits
-    # one screen with no scrolling. Scoped to this page only (kiosk is the only
-    # view rendered here), so other pages keep their normal sizes.
     st.markdown(
         "<style>"
         ".block-container{padding-top:.3rem !important;margin-top:.1rem !important;"
-        "padding-bottom:.5rem !important}"
-        "div[data-testid='stVerticalBlock']{gap:.15rem !important}"
-        ".pindots{font-size:1.15rem !important;margin:.05rem 0 .1rem !important}"
-        ".subtitle{font-size:.8rem !important;margin:0 0 .2rem !important}"
-        "div[class*='st-key-kp_'] button{height:2.05rem !important;min-height:2.05rem !important;"
-        "font-size:1.25rem !important;padding:0 !important}"
-        ".bigcard{padding:.5rem .8rem !important;margin:.2rem 0 !important}"
-        ".bigcard h2{font-size:1.3rem !important;margin:0 !important}"
+        "padding-bottom:.8rem !important}"
+        "div[data-testid='stVerticalBlock']{gap:.35rem !important}"
+        ".subtitle{font-size:.95rem !important;margin:.15rem 0 .35rem !important}"
         "</style>",
         unsafe_allow_html=True)
     kiosk_dashboard()
-    st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:700;"
-                "font-size:.8rem;color:#6C7684;margin:.05rem 0 0\">Welcome! Please check in below 👋</div>",
-                unsafe_allow_html=True)
-    banner()
+
+    # Private: staff enter the admin password (same one as the Admin page). Once
+    # unlocked it stays unlocked for the whole session on that iPad.
+    if not st.session_state.get("admin_ok"):
+        st.markdown("<div class='subtitle' style='text-align:center'>🔒 Staff check-in — "
+                    "enter the admin password to begin.</div>", unsafe_allow_html=True)
+    if not check_password():
+        return
 
     if flash := st.session_state.pop("kflash", ""):
         st.success(flash)
     if quote := st.session_state.pop("kquote", ""):
         st.markdown(f"<div style='text-align:center;font-style:italic;color:{COLORS['muted']};"
-                    f"font-size:1.05rem;margin:.2rem 0 .6rem'>💬 {quote}</div>", unsafe_allow_html=True)
+                    f"font-size:1.05rem;margin:.2rem 0 .4rem'>💬 {quote}</div>", unsafe_allow_html=True)
+    banner()
 
-    pin = st.session_state.setdefault("kpin", "")
-
-    if len(pin) == PIN_LEN:
-        matches = enrolled_by_pin(pin)
-        cols = st.columns([1, 2, 1])
-        with cols[1]:
-            if not matches:
-                _record_fail("kiosk")
-                st.error("No child found for that code.")
-            else:
-                _reset_fails("kiosk")
-                date_iso = S.today_iso(TZ)
-                todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
-                for kid in matches:
-                    rec = todays.get(kid["id"])
-                    inside = rec is not None and not rec.get("check_out")
-                    st.markdown(f"<div class='bigcard'><h2>{kid['name']}</h2>"
-                                + (f"<div style='color:{COLORS['green_deep']};font-weight:700'>🟢 In since {rec['check_in']}</div>"
-                                   if inside else "<div style='color:#8A94A6;font-weight:700'>Not checked in</div>")
-                                + "</div>", unsafe_allow_html=True)
-                    label = "Check OUT 👋" if inside else "Check IN ✅"
-                    if st.button(label, key=f"do_{kid['id']}", type="primary", width="stretch"):
-                        if inside:
-                            store.set_checkout(rec["id"], S.time_str(TZ))
-                            st.session_state.kflash = (f"Have a great rest of your day, {kid['name']}! "
-                                                       "See you next time. 👋")
-                            st.session_state.kquote = random.choice(CHECKOUT_QUOTES)
-                        else:
-                            store.add_checkin(kid["id"], date_iso, S.time_str(TZ))
-                            st.session_state.kflash = (f"Have a great day, {kid['name']}! "
-                                                       "See you in a few. 🌈")
-                        st.session_state.kpin = ""
-                        st.rerun()
-            if st.button("Start over", width="stretch"):
-                st.session_state.kpin = ""
-                st.rerun()
-        return
-
-    # keypad — isolated in a fragment so each tap only re-runs the keypad
-    kiosk_keypad()
+    enrolled = [k for k in store.list_kids() if k["status"] == "Enrolled"]
+    enrolled.sort(key=lambda k: (k["name"] or "").lower())
+    checkin_grid(enrolled)
 
 
 # ------------------------------------------------------------------ SIGN-UP
@@ -1117,8 +1093,8 @@ def view_admin():
     m2.metric("Enrolled", len(enrolled))
     m3.metric("Here today", here_now)
 
-    t_wait, t_kids, t_today, t_logs, t_ann, t_upd, t_album = st.tabs(
-        [f"Waitlist ({len(waitlist)})", f"Children ({len(enrolled)})",
+    t_wait, t_kids, t_photos, t_today, t_logs, t_ann, t_upd, t_album = st.tabs(
+        [f"Waitlist ({len(waitlist)})", f"Children ({len(enrolled)})", "📸 Photos",
          "Today", "Daily Logs", "Announcements", "Daily Update", "Album"]
     )
 
@@ -1215,6 +1191,38 @@ def view_admin():
                 if st.button("Withdraw child", key=f"wd_{k['id']}"):
                     store.update_kid_status(k["id"], "Withdrawn")
                     st.rerun()
+
+    with t_photos:
+        st.markdown("Set each enrolled child's photo — this is what appears on the "
+                    "**check-in screen** and their **Student ID card**.")
+        if not enrolled:
+            st.info("No enrolled children yet.")
+        else:
+            missing = [k["name"] or "Unnamed" for k in enrolled if not k["child_photo"]]
+            if missing:
+                st.warning("Still need a photo: " + ", ".join(missing))
+            else:
+                st.success("Every enrolled child has a photo. 🎉")
+            for k in enrolled:
+                has = bool(k["child_photo"])
+                with st.expander(("✅ " if has else "⚠️ ") + (k["name"] or "Unnamed"),
+                                 expanded=not has):
+                    pc1, pc2 = st.columns([1, 2])
+                    with pc1:
+                        if has:
+                            st.markdown(
+                                f"<img src='{k['child_photo'][0]['url']}' style='width:120px;"
+                                "height:150px;object-fit:cover;border-radius:50%;"
+                                "border:5px solid #F4978E'/>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(
+                                "<div style='width:120px;height:150px;border-radius:50%;"
+                                "background:linear-gradient(135deg,#FDEBE8,#E7F7F6);display:flex;"
+                                "align-items:center;justify-content:center;color:#8A94A6;"
+                                "font-weight:700;text-align:center'>No photo<br>yet</div>",
+                                unsafe_allow_html=True)
+                    with pc2:
+                        child_photo_uploader(k, "ph")
 
     with t_today:
         st.caption(f"Attendance for {date_iso}")
