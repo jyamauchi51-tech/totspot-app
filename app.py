@@ -721,14 +721,14 @@ _DASH_HTML = """
 #totdash .l{text-align:right}
 #totdash .r{text-align:left}
 #totdash .mid{flex:0 0 auto;text-align:center;padding:0 .2rem}
-#totdash .mid img{width:32vw;max-width:250px;max-height:112px;object-fit:contain}
-#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.72rem;line-height:1.1}
-#totdash #tdclock,#totdash .wx{font-size:1.2rem;font-weight:800;color:#2B2B2B;line-height:1.05}
+#totdash .mid img{width:40vw;max-width:340px;max-height:150px;object-fit:contain}
+#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.95rem;line-height:1.1}
+#totdash #tdclock,#totdash .wx{font-size:2.1rem;font-weight:800;color:#2B2B2B;line-height:1.05}
 #totdash .wx{white-space:nowrap}
 @media(max-width:600px){
-  #totdash .row{gap:.7rem}
-  #totdash #tdclock,#totdash .wx{font-size:1rem}
-  #totdash .lbl{font-size:.62rem}
+  #totdash .row{gap:.6rem}
+  #totdash #tdclock,#totdash .wx{font-size:1.45rem}
+  #totdash .lbl{font-size:.75rem}
 }
 </style>
 <div class="row">
@@ -825,23 +825,37 @@ def checkin_grid(enrolled: list[dict]):
                 f"url('{img}');background-size:cover;background-position:center;color:#fff;"
                 "text-shadow:0 1px 6px rgba(0,0,0,.95);")
         rules.append(sel + "{" + face +
-                     f"width:100%;max-width:140px;margin:0 auto;aspect-ratio:4/5;border-radius:50%;"
-                     f"border:5px solid {ring};box-shadow:0 6px 16px rgba(0,0,0,.13);display:flex;"
-                     "align-items:flex-end;justify-content:center;padding:0 .3rem .5rem;"
-                     "font-family:'Baloo 2';font-weight:800;font-size:1.1rem;line-height:1.1;"
+                     f"width:100%;max-width:170px;margin:0 auto;aspect-ratio:4/5;border-radius:50%;"
+                     f"border:6px solid {ring};box-shadow:0 6px 16px rgba(0,0,0,.13);display:flex;"
+                     "align-items:flex-end;justify-content:center;padding:0 .35rem .6rem;"
+                     "font-family:'Baloo 2';font-weight:800;font-size:1.3rem;line-height:1.1;"
                      "white-space:normal;transition:transform .07s ease;}")
         rules.append(sel + ":hover{transform:translateY(-3px);border-color:#F4978E;}")
         rules.append(sel + ":active{transform:scale(.96);}")
     st.markdown("<style>" + "".join(rules) + "</style>", unsafe_allow_html=True)
 
-    per_row = 5
-    for i in range(0, len(enrolled), per_row):
-        cols = st.columns(per_row)
-        for j, k in enumerate(enrolled[i:i + per_row]):
-            nm = (k["name"] or "").strip()
-            first = nm.split()[0] if nm else "?"
+    # Arrange in centered rows, max 3 per row, remainder on top
+    # (e.g. 5 kids -> 2 on top, 3 on bottom).
+    def _rows(items, maxn=3):
+        n, rem = len(items), len(items) % maxn
+        out, idx = [], 0
+        if n > maxn and rem:
+            out.append(items[:rem]); idx = rem
+        while idx < n:
+            out.append(items[idx:idx + maxn]); idx += maxn
+        return out or [items]
+
+    def _centered_cols(count):
+        side = (3 - count) / 2.0
+        if side > 0:
+            return st.columns([side] + [1] * count + [side])[1:1 + count]
+        return st.columns(count)
+
+    for row in _rows(enrolled, 3):
+        for col, k in zip(_centered_cols(len(row)), row):
+            first = ((k["name"] or "").strip().split() or ["?"])[0]
             r = todays.get(k["id"])
-            with cols[j]:
+            with col:
                 st.button(first, key=f"ci_{k['id']}", width="stretch",
                           on_click=_ci_toggle, args=(k["id"], first))
                 if r and not r.get("check_out"):
