@@ -361,6 +361,17 @@ def cohorts_meeting_today(now) -> list[str]:
     return []
 
 
+def enrolled_for_today(enrolled: list[dict], now) -> list[dict]:
+    """Enrolled kids whose cohort meets today, plus any with no cohort set (so a
+    child is never stranded/un-checkable). Empty on non-class days (Fri/weekend)."""
+    meeting = cohorts_meeting_today(now)
+    if not meeting:
+        return []
+    return [k for k in enrolled
+            if (k.get("cohort") or "").strip() in meeting
+            or not (k.get("cohort") or "").strip()]
+
+
 def _idx(options: list[str], value: str) -> int:
     return options.index(value) if value in options else 0
 
@@ -753,6 +764,29 @@ def kiosk_dashboard():
         components.html(html, height=130)
 
 
+def avatar_uri(gender: str) -> str:
+    """A friendly default boy/girl/neutral kid avatar (SVG data URI) for children
+    who don't have a photo yet."""
+    g = (gender or "").strip().lower()
+    if g == "male":
+        bg, fg, hair = "#DCEAFF", "#6FA8E8", ""
+    elif g == "female":
+        bg, fg = "#FCE4EF", "#E88FB8"
+        hair = ("<circle cx='66' cy='120' r='24' fill='#E88FB8'/>"
+                "<circle cx='174' cy='120' r='24' fill='#E88FB8'/>")
+    else:
+        bg, fg, hair = "#EDE7F6", "#B39DDB", ""
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 300'>"
+        f"<rect width='240' height='300' fill='{bg}'/>"
+        f"{hair}"
+        f"<circle cx='120' cy='120' r='56' fill='{fg}'/>"
+        f"<path d='M42 300 c0-56 35-94 78-94 s78 38 78 94 z' fill='{fg}'/>"
+        "</svg>"
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode()
+
+
 # --- photo check-in grid -----------------------------------------------------
 # One tap per child (no laggy per-digit keypad). Each child's oval photo IS the
 # tap target; tapping toggles them in/out. Full rerun per tap is fine now that a
@@ -785,15 +819,12 @@ def checkin_grid(enrolled: list[dict]):
     # per-child styling: turn each button into a big tappable oval photo
     rules = []
     for k in enrolled:
-        url = k["child_photo"][0]["url"] if k["child_photo"] else ""
+        img = k["child_photo"][0]["url"] if k["child_photo"] else avatar_uri(k.get("gender"))
         ring = "#7DBE6A" if inside(k) else "#EAD9F2"
         sel = f'div[class*="st-key-ci_{k["id"]}"] button'
-        if url:
-            face = ("background-image:linear-gradient(rgba(0,0,0,0) 50%,rgba(0,0,0,.62)),"
-                    f"url('{url}');background-size:cover;background-position:center;color:#fff;"
-                    "text-shadow:0 1px 5px rgba(0,0,0,.9);")
-        else:
-            face = "background:linear-gradient(135deg,#FDEBE8,#E7F7F6);color:#2B2B2B;"
+        face = ("background-image:linear-gradient(rgba(0,0,0,0) 52%,rgba(0,0,0,.6)),"
+                f"url('{img}');background-size:cover;background-position:center;color:#fff;"
+                "text-shadow:0 1px 5px rgba(0,0,0,.9);")
         rules.append(sel + "{" + face +
                      f"width:100%;aspect-ratio:4/5;border-radius:50%;border:6px solid {ring};"
                      "box-shadow:0 6px 18px rgba(0,0,0,.12);display:flex;align-items:flex-end;"
@@ -846,7 +877,21 @@ def view_kiosk():
 
     enrolled = [k for k in store.list_kids() if k["status"] == "Enrolled"]
     enrolled.sort(key=lambda k: (k["name"] or "").lower())
-    checkin_grid(enrolled)
+    now = S.now_local(TZ)
+    show_all = st.checkbox("Show all enrolled kids (not just today's)", key="kiosk_show_all")
+    if show_all:
+        shown = enrolled
+        st.caption(f"Showing all {len(enrolled)} enrolled kids.")
+    else:
+        shown = enrolled_for_today(enrolled, now)
+        meeting = cohorts_meeting_today(now)
+        if meeting:
+            st.caption(f"Showing {len(shown)} kid(s) scheduled for "
+                       f"{now.strftime('%A')} ({' & '.join(meeting)}).")
+        else:
+            st.caption(f"No classes are scheduled for {now.strftime('%A')}. "
+                       "Tick the box above to show everyone.")
+    checkin_grid(shown)
 
 
 # ------------------------------------------------------------------ SIGN-UP
@@ -1216,11 +1261,11 @@ def view_admin():
                                 "border:5px solid #F4978E'/>", unsafe_allow_html=True)
                         else:
                             st.markdown(
-                                "<div style='width:120px;height:150px;border-radius:50%;"
-                                "background:linear-gradient(135deg,#FDEBE8,#E7F7F6);display:flex;"
-                                "align-items:center;justify-content:center;color:#8A94A6;"
-                                "font-weight:700;text-align:center'>No photo<br>yet</div>",
-                                unsafe_allow_html=True)
+                                f"<img src='{avatar_uri(k.get('gender'))}' style='width:120px;"
+                                "height:150px;object-fit:cover;border-radius:50%;"
+                                "border:5px solid #EAD9F2'/>"
+                                "<div style='color:#8A94A6;font-size:.8rem;text-align:center'>"
+                                "default icon</div>", unsafe_allow_html=True)
                     with pc2:
                         child_photo_uploader(k, "ph")
 
