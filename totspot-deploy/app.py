@@ -12,6 +12,7 @@ Views chosen by the ?view= URL parameter:
 import base64
 import io
 import random
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -209,7 +210,7 @@ header[data-testid="stHeader"] { background: transparent; }
 .brand { font-family: 'Baloo 2'; font-weight: 800; font-size: 2.6rem; text-align: center; }
 .codechip { display:inline-block; background:__lavender_bg__; color:__ink__; font-family:'Baloo 2';
     font-weight:800; letter-spacing:.2em; font-size:1.3rem; padding:.2rem .8rem; border-radius:.6rem; }
-.pindots { text-align:center; font-size:2rem; letter-spacing:.35em; color:__coral__; margin:.2rem 0 .5rem; }
+.pindots { text-align:center; font-size:1.7rem; letter-spacing:.35em; color:__coral__; margin:.05rem 0 .2rem; }
 
 /* buttons — brand coral, baked in so they never fall back to Streamlit red */
 div[data-testid="stButton"] > button, div[data-testid="stFormSubmitButton"] > button {
@@ -264,7 +265,7 @@ div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="sel
 .c-lav { background: __LAVENDER_BG__; } .c-teal { background: __TEAL_BG__; }
 
 div[class*="st-key-kp_"] button {
-    height: 2.6rem; min-height:2.6rem; font-size: 1.55rem; border-radius: .8rem; font-family:'Baloo 2';
+    height: 2.5rem; min-height:2.5rem; font-size: 1.5rem; border-radius: .8rem; font-family:'Baloo 2';
     background: __coral_bg__ !important; color: __ink__ !important;
     border: 2px solid __coral__ !important; box-shadow: 0 2px 6px rgba(0,0,0,.10); padding:.1rem;
 }
@@ -358,6 +359,17 @@ def cohorts_meeting_today(now) -> list[str]:
     if wd in (1, 3):
         return ["Tues/Thurs", "Full-Time"]
     return []
+
+
+def enrolled_for_today(enrolled: list[dict], now) -> list[dict]:
+    """Enrolled kids whose cohort meets today, plus any with no cohort set (so a
+    child is never stranded/un-checkable). Empty on non-class days (Fri/weekend)."""
+    meeting = cohorts_meeting_today(now)
+    if not meeting:
+        return []
+    return [k for k in enrolled
+            if (k.get("cohort") or "").strip() in meeting
+            or not (k.get("cohort") or "").strip()]
 
 
 def _idx(options: list[str], value: str) -> int:
@@ -629,43 +641,106 @@ _WCODE = {
 }
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+# World-Weather-Online codes (used by the wttr.in fallback) -> emoji
+_WWO = {
+    "113": "☀️", "116": "🌤️", "119": "☁️", "122": "☁️",
+    "143": "🌫️", "248": "🌫️", "260": "🌫️",
+    "176": "🌦️", "263": "🌦️", "266": "🌦️", "281": "🌧️", "284": "🌧️", "293": "🌦️", "296": "🌦️",
+    "299": "🌧️", "302": "🌧️", "305": "🌧️", "308": "🌧️", "311": "🌧️", "314": "🌧️",
+    "353": "🌦️", "356": "🌧️", "359": "🌧️",
+    "179": "🌨️", "182": "🌨️", "185": "🌧️", "227": "🌨️", "230": "❄️",
+    "317": "🌨️", "320": "🌨️", "323": "🌨️", "326": "🌨️", "329": "🌨️", "332": "🌨️",
+    "335": "🌨️", "338": "🌨️", "350": "🌨️", "362": "🌨️", "365": "🌨️", "368": "🌨️",
+    "371": "🌨️", "374": "🌧️", "377": "🌧️",
+    "200": "⛈️", "386": "⛈️", "389": "⛈️", "392": "⛈️", "395": "⛈️",
+}
+
+_WX_UA = {"User-Agent": "TheTotSpot-Kiosk/1.0 (contactthetotspot@gmail.com)"}
+
+
+def _fetch_open_meteo():
+    import requests
+    r = requests.get("https://api.open-meteo.com/v1/forecast",
+                     params={"latitude": 33.6292, "longitude": -112.3680,
+                             "current": "temperature_2m,weather_code",
+                             "temperature_unit": "fahrenheit", "timezone": "America/Phoenix"},
+                     headers=_WX_UA, timeout=8)
+    r.raise_for_status()
+    c = r.json().get("current", {})
+    if c.get("temperature_2m") is None:
+        raise ValueError("no temperature in response")
+    emoji, desc = _WCODE.get(int(c.get("weather_code", 0)), ("🌡️", ""))
+    return {"temp": round(c["temperature_2m"]), "emoji": emoji, "desc": desc}
+
+
+def _fetch_wttr():
+    import requests
+    r = requests.get("https://wttr.in/85388", params={"format": "j1"},
+                     headers={"User-Agent": "curl/8"}, timeout=8)
+    r.raise_for_status()
+    cc = (r.json().get("current_condition") or [{}])[0]
+    if cc.get("temp_F") is None:
+        raise ValueError("no temperature in response")
+    desc = (cc.get("weatherDesc") or [{}])[0].get("value", "").strip()
+    emoji = _WWO.get(str(cc.get("weatherCode", "")), "🌡️")
+    return {"temp": round(float(cc["temp_F"])), "emoji": emoji, "desc": desc}
+
+
+# Small process-level cache. Keep good data for 10 min, but retry a *failure*
+# after only 90s -- Streamlit Cloud's shared egress IP can get rate-limited by a
+# single free weather source, and we don't want a stale "unavailable" for 10 min.
+_WCACHE = {"ts": 0.0, "data": None}
+
+
 def get_weather():
-    """Current weather for Surprise, AZ (85388) via free Open-Meteo API. None on failure."""
-    try:
-        import requests
-        r = requests.get("https://api.open-meteo.com/v1/forecast",
-                         params={"latitude": 33.6292, "longitude": -112.3680,
-                                 "current": "temperature_2m,weather_code",
-                                 "temperature_unit": "fahrenheit", "timezone": "America/Phoenix"},
-                         timeout=8)
-        if r.status_code == 200:
-            c = r.json().get("current", {})
-            if c.get("temperature_2m") is not None:
-                return {"temp": round(c["temperature_2m"]), "code": c.get("weather_code", 0)}
-    except Exception:
-        pass
-    return None
+    """Current weather for Surprise, AZ. Tries two independent free sources
+    (Open-Meteo, then wttr.in). Returns {"temp","emoji","desc"} or None."""
+    ttl = 600 if _WCACHE["data"] else 90
+    if _WCACHE["ts"] and (time.time() - _WCACHE["ts"]) < ttl:
+        return _WCACHE["data"]
+    data = None
+    for fn in (_fetch_open_meteo, _fetch_wttr):
+        try:
+            data = fn()
+            break
+        except Exception:
+            continue
+    _WCACHE["ts"] = time.time()
+    _WCACHE["data"] = data
+    return data
 
 
+# One tidy row across the top of the kiosk: time (left) · logo (center) · weather (right)
 _DASH_HTML = """
 <div id="totdash">
 <style>
 #totdash{font-family:'Baloo 2','Nunito',sans-serif}
-#totdash .bar{display:flex;justify-content:space-between;align-items:center;background:#fff;
-  border:1px solid #ECEFF4;border-radius:1.2rem;padding:.6rem 1.3rem;box-shadow:0 4px 14px rgba(0,0,0,.06)}
-#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.95rem}
-#totdash #tdclock,#totdash .wx{font-size:2rem;font-weight:800;color:#2B2B2B;line-height:1.1}
+/* cluster time + logo + weather together in the center (not a full-width bar) */
+#totdash .row{display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;gap:1.4rem;padding:0 .2rem}
+#totdash .side{flex:0 0 auto;min-width:0}
+#totdash .l{text-align:right}
+#totdash .r{text-align:left}
+#totdash .mid{flex:0 0 auto;text-align:center;padding:0 .2rem}
+#totdash .mid img{width:32vw;max-width:250px;max-height:112px;object-fit:contain}
+#totdash .lbl{color:#8A94A6;font-weight:700;font-size:.72rem;line-height:1.1}
+#totdash #tdclock,#totdash .wx{font-size:1.2rem;font-weight:800;color:#2B2B2B;line-height:1.05}
+#totdash .wx{white-space:nowrap}
+@media(max-width:600px){
+  #totdash .row{gap:.7rem}
+  #totdash #tdclock,#totdash .wx{font-size:1rem}
+  #totdash .lbl{font-size:.62rem}
+}
 </style>
-<div class="bar">
-  <div><div id="tdclock">--:--</div><div id="tddate" class="lbl"></div></div>
-  <div style="text-align:right">__WEATHER__</div>
+<div class="row">
+  <div class="side l"><div id="tdclock">--:--</div><div id="tddate" class="lbl"></div></div>
+  <div class="mid">__LOGOIMG__</div>
+  <div class="side r">__WEATHER__</div>
 </div>
 </div>
 <script>
 (function(){function u(){var n=new Date();var c=document.getElementById('tdclock');if(!c)return;
  c.textContent=n.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
- document.getElementById('tddate').textContent=n.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});}
+ document.getElementById('tddate').textContent=n.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});}
  u();if(window._totClock)clearInterval(window._totClock);window._totClock=setInterval(u,1000);})();
 </script>
 """
@@ -674,102 +749,149 @@ _DASH_HTML = """
 def kiosk_dashboard():
     w = get_weather()
     if w:
-        emoji, desc = _WCODE.get(w["code"], ("🌡️", ""))
-        weather = (f"<div class='wx'>{emoji} {w['temp']}°F</div>"
-                   f"<div class='lbl'>{desc} · Surprise, AZ</div>")
+        weather = (f"<div class='wx'>{w['emoji']} {w['temp']}&deg;F</div>"
+                   f"<div class='lbl'>{w['desc']} &middot; Surprise, AZ</div>")
     else:
-        weather = "<div class='lbl'>Weather unavailable</div>"
+        weather = "<div class='lbl'>Weather<br>unavailable</div>"
+    logo = (f"<img src='{LOGO_URI}' alt='The Tot Spot'>" if LOGO_URI
+            else "<div style=\"font-family:'Baloo 2',cursive;font-weight:800;"
+                 "font-size:1.5rem;color:#F4978E\">The Tot Spot</div>")
+    html = _DASH_HTML.replace("__LOGOIMG__", logo).replace("__WEATHER__", weather)
     try:
-        st.html(_DASH_HTML.replace("__WEATHER__", weather), unsafe_allow_javascript=True)
+        st.html(html, unsafe_allow_javascript=True)
     except TypeError:
         # older Streamlit without the JS flag: fall back to the components iframe
-        components.html(_DASH_HTML.replace("__WEATHER__", weather), height=90)
+        components.html(html, height=130)
+
+
+def avatar_uri(gender: str) -> str:
+    """A friendly default boy/girl/neutral kid avatar (SVG data URI) for children
+    who don't have a photo yet."""
+    g = (gender or "").strip().lower()
+    if g == "male":
+        bg, fg, hair = "#DCEAFF", "#6FA8E8", ""
+    elif g == "female":
+        bg, fg = "#FCE4EF", "#E88FB8"
+        hair = ("<circle cx='66' cy='120' r='24' fill='#E88FB8'/>"
+                "<circle cx='174' cy='120' r='24' fill='#E88FB8'/>")
+    else:
+        bg, fg, hair = "#EDE7F6", "#B39DDB", ""
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 300'>"
+        f"<rect width='240' height='300' fill='{bg}'/>"
+        f"{hair}"
+        f"<circle cx='120' cy='120' r='56' fill='{fg}'/>"
+        f"<path d='M42 300 c0-56 35-94 78-94 s78 38 78 94 z' fill='{fg}'/>"
+        "</svg>"
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode()
+
+
+# --- photo check-in grid -----------------------------------------------------
+# One tap per child (no laggy per-digit keypad). Each child's oval photo IS the
+# tap target; tapping toggles them in/out. Full rerun per tap is fine now that a
+# check-in is a single action rather than 6 keystrokes.
+def _ci_toggle(kid_id: str, first: str):
+    date_iso = S.today_iso(TZ)
+    todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
+    rec = todays.get(kid_id)
+    if rec is not None and not rec.get("check_out"):
+        store.set_checkout(rec["id"], S.time_str(TZ))
+        st.session_state.kflash = f"Have a great rest of your day, {first}! See you next time. 👋"
+        st.session_state.kquote = random.choice(CHECKOUT_QUOTES)
+    else:
+        store.add_checkin(kid_id, date_iso, S.time_str(TZ))
+        st.session_state.kflash = f"Have a great day, {first}! See you in a few. 🌈"
+
+
+def checkin_grid(enrolled: list[dict]):
+    if not enrolled:
+        st.info("No enrolled children yet. Enroll kids on the Admin page, then add their "
+                "photos in Admin → 📸 Photos.")
+        return
+    date_iso = S.today_iso(TZ)
+    todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
+
+    def inside(k):
+        rec = todays.get(k["id"])
+        return rec is not None and not rec.get("check_out")
+
+    # per-child styling: turn each button into a big tappable oval photo
+    rules = []
+    for k in enrolled:
+        img = k["child_photo"][0]["url"] if k["child_photo"] else avatar_uri(k.get("gender"))
+        ring = "#7DBE6A" if inside(k) else "#EAD9F2"
+        sel = f'div[class*="st-key-ci_{k["id"]}"] button'
+        face = ("background-image:linear-gradient(rgba(0,0,0,0) 52%,rgba(0,0,0,.6)),"
+                f"url('{img}');background-size:cover;background-position:center;color:#fff;"
+                "text-shadow:0 1px 5px rgba(0,0,0,.9);")
+        rules.append(sel + "{" + face +
+                     f"width:100%;aspect-ratio:4/5;border-radius:50%;border:6px solid {ring};"
+                     "box-shadow:0 6px 18px rgba(0,0,0,.12);display:flex;align-items:flex-end;"
+                     "justify-content:center;padding:0 .4rem .7rem;font-family:'Baloo 2';"
+                     "font-weight:800;font-size:1.25rem;line-height:1.15;white-space:normal;"
+                     "transition:transform .06s ease;}")
+        rules.append(sel + ":hover{transform:translateY(-3px);border-color:#F4978E;}")
+        rules.append(sel + ":active{transform:scale(.97);}")
+    st.markdown("<style>" + "".join(rules) + "</style>", unsafe_allow_html=True)
+
+    st.markdown("<div class='subtitle' style='text-align:center'>Tap a child to check them "
+                "in or out 👇</div>", unsafe_allow_html=True)
+    per_row = 4
+    for i in range(0, len(enrolled), per_row):
+        cols = st.columns(per_row)
+        for j, k in enumerate(enrolled[i:i + per_row]):
+            nm = (k["name"] or "").strip()
+            first = nm.split()[0] if nm else "?"
+            label = ("🟢 " if inside(k) else "") + first
+            cols[j].button(label, key=f"ci_{k['id']}", width="stretch",
+                           on_click=_ci_toggle, args=(k["id"], first))
 
 
 def view_kiosk():
     st.markdown(css(), unsafe_allow_html=True)
+    st.markdown(
+        "<style>"
+        ".block-container{padding-top:.3rem !important;margin-top:.1rem !important;"
+        "padding-bottom:.8rem !important}"
+        "div[data-testid='stVerticalBlock']{gap:.35rem !important}"
+        ".subtitle{font-size:.95rem !important;margin:.15rem 0 .35rem !important}"
+        "</style>",
+        unsafe_allow_html=True)
     kiosk_dashboard()
-    logo_header(max_width=380)
-    now = S.now_local(TZ)
-    st.markdown("<div style=\"text-align:center;font-family:'Baloo 2',cursive;font-weight:800;"
-                "font-size:1.7rem;color:#2B2B2B;margin:.2rem 0 0\">Welcome to The Tot Spot! 👋</div>",
-                unsafe_allow_html=True)
-    st.markdown(f"<div class='subtitle'>Check-in &middot; {now.strftime('%A, %B ')}{now.day}</div>",
-                unsafe_allow_html=True)
-    banner()
+
+    # Private: staff enter the admin password (same one as the Admin page). Once
+    # unlocked it stays unlocked for the whole session on that iPad.
+    if not st.session_state.get("admin_ok"):
+        st.markdown("<div class='subtitle' style='text-align:center'>🔒 Staff check-in — "
+                    "enter the admin password to begin.</div>", unsafe_allow_html=True)
+    if not check_password():
+        return
 
     if flash := st.session_state.pop("kflash", ""):
         st.success(flash)
     if quote := st.session_state.pop("kquote", ""):
         st.markdown(f"<div style='text-align:center;font-style:italic;color:{COLORS['muted']};"
-                    f"font-size:1.05rem;margin:.2rem 0 .6rem'>💬 {quote}</div>", unsafe_allow_html=True)
+                    f"font-size:1.05rem;margin:.2rem 0 .4rem'>💬 {quote}</div>", unsafe_allow_html=True)
+    banner()
 
-    pin = st.session_state.setdefault("kpin", "")
-
-    if len(pin) == PIN_LEN:
-        matches = enrolled_by_pin(pin)
-        cols = st.columns([1, 2, 1])
-        with cols[1]:
-            if not matches:
-                _record_fail("kiosk")
-                st.error("No child found for that code.")
-            else:
-                _reset_fails("kiosk")
-                date_iso = S.today_iso(TZ)
-                todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
-                for kid in matches:
-                    rec = todays.get(kid["id"])
-                    inside = rec is not None and not rec.get("check_out")
-                    st.markdown(f"<div class='bigcard'><h2>{kid['name']}</h2>"
-                                + (f"<div style='color:{COLORS['green_deep']};font-weight:700'>🟢 In since {rec['check_in']}</div>"
-                                   if inside else "<div style='color:#8A94A6;font-weight:700'>Not checked in</div>")
-                                + "</div>", unsafe_allow_html=True)
-                    label = "Check OUT 👋" if inside else "Check IN ✅"
-                    if st.button(label, key=f"do_{kid['id']}", type="primary", width="stretch"):
-                        if inside:
-                            store.set_checkout(rec["id"], S.time_str(TZ))
-                            st.session_state.kflash = (f"Have a great rest of your day, {kid['name']}! "
-                                                       "See you next time. 👋")
-                            st.session_state.kquote = random.choice(CHECKOUT_QUOTES)
-                        else:
-                            store.add_checkin(kid["id"], date_iso, S.time_str(TZ))
-                            st.session_state.kflash = (f"Have a great day, {kid['name']}! "
-                                                       "See you in a few. 🌈")
-                        st.session_state.kpin = ""
-                        st.rerun()
-            if st.button("Start over", width="stretch"):
-                st.session_state.kpin = ""
-                st.rerun()
-        return
-
-    # keypad
-    cols = st.columns([1, 2, 1])
-    with cols[1]:
-        if _locked("kiosk"):
-            return
-        dots = "".join("●" if i < len(pin) else "○" for i in range(PIN_LEN))
-        st.markdown(f"<div class='pindots'>{dots}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='subtitle'>Enter your 6-digit family code</div>", unsafe_allow_html=True)
-
-        def press(d):
-            if len(st.session_state.kpin) < PIN_LEN:
-                st.session_state.kpin += d
-                st.rerun()
-
-        for row in (["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]):
-            rc = st.columns(3)
-            for i, d in enumerate(row):
-                if rc[i].button(d, key=f"kp_{d}", width="stretch"):
-                    press(d)
-        rc = st.columns(3)
-        if rc[0].button("Clear", key="kp_clear", width="stretch"):
-            st.session_state.kpin = ""
-            st.rerun()
-        if rc[1].button("0", key="kp_0", width="stretch"):
-            press("0")
-        if rc[2].button("⌫", key="kp_back", width="stretch"):
-            st.session_state.kpin = st.session_state.kpin[:-1]
-            st.rerun()
+    enrolled = [k for k in store.list_kids() if k["status"] == "Enrolled"]
+    enrolled.sort(key=lambda k: (k["name"] or "").lower())
+    now = S.now_local(TZ)
+    show_all = st.checkbox("Show all enrolled kids (not just today's)", key="kiosk_show_all")
+    if show_all:
+        shown = enrolled
+        st.caption(f"Showing all {len(enrolled)} enrolled kids.")
+    else:
+        shown = enrolled_for_today(enrolled, now)
+        meeting = cohorts_meeting_today(now)
+        if meeting:
+            st.caption(f"Showing {len(shown)} kid(s) scheduled for "
+                       f"{now.strftime('%A')} ({' & '.join(meeting)}).")
+        else:
+            st.caption(f"No classes are scheduled for {now.strftime('%A')}. "
+                       "Tick the box above to show everyone.")
+    checkin_grid(shown)
 
 
 # ------------------------------------------------------------------ SIGN-UP
@@ -1016,8 +1138,8 @@ def view_admin():
     m2.metric("Enrolled", len(enrolled))
     m3.metric("Here today", here_now)
 
-    t_wait, t_kids, t_today, t_logs, t_ann, t_upd, t_album = st.tabs(
-        [f"Waitlist ({len(waitlist)})", f"Children ({len(enrolled)})",
+    t_wait, t_kids, t_photos, t_today, t_logs, t_ann, t_upd, t_album = st.tabs(
+        [f"Waitlist ({len(waitlist)})", f"Children ({len(enrolled)})", "📸 Photos",
          "Today", "Daily Logs", "Announcements", "Daily Update", "Album"]
     )
 
@@ -1025,7 +1147,10 @@ def view_admin():
         wl_now = S.now_local(TZ)
         if not waitlist:
             st.write("No one on the waitlist.")
-        # --- filters + sort ---
+        # --- search + filters + sort ---
+        f_search = st.text_input("🔍 Search by child name, parent, or phone",
+                                 key="wl_search",
+                                 placeholder="Start typing a name…").strip().lower()
         fc1, fc2, fc3 = st.columns(3)
         f_cohort = fc1.selectbox("Cohort", ["All", "Mon/Wed", "Tues/Thurs", "Full-Time", "No preference"],
                                  key="wl_cohort")
@@ -1037,6 +1162,13 @@ def view_admin():
         age_default = (age_lo == 0.0 and age_hi == 6.0)
 
         def _match(k):
+            if f_search:
+                hay = " ".join(str(k.get(fld) or "") for fld in
+                               ("name", "parent_name", "parent2_name", "phone",
+                                "email", "notes")).lower()
+                # every typed word must appear somewhere (handles "first last")
+                if not all(tok in hay for tok in f_search.split()):
+                    return False
             kc = k.get("cohort") or ""
             if f_cohort == "No preference":
                 if kc not in ("", "No preference"):
@@ -1060,6 +1192,8 @@ def view_admin():
                                      age_years(k.get("birthdate"), wl_now) or 0),
                       reverse=(f_sort == "Age (oldest)"))
         st.caption(f"Showing {len(rows)} of {len(waitlist)} on the waitlist.")
+        if waitlist and not rows:
+            st.info("No matches — try clearing the search box or filters above.")
 
         for pos, k in enumerate(rows, 1):
             c1, c2, c3 = st.columns([5, 1, 1])
@@ -1102,6 +1236,38 @@ def view_admin():
                 if st.button("Withdraw child", key=f"wd_{k['id']}"):
                     store.update_kid_status(k["id"], "Withdrawn")
                     st.rerun()
+
+    with t_photos:
+        st.markdown("Set each enrolled child's photo — this is what appears on the "
+                    "**check-in screen** and their **Student ID card**.")
+        if not enrolled:
+            st.info("No enrolled children yet.")
+        else:
+            missing = [k["name"] or "Unnamed" for k in enrolled if not k["child_photo"]]
+            if missing:
+                st.warning("Still need a photo: " + ", ".join(missing))
+            else:
+                st.success("Every enrolled child has a photo. 🎉")
+            for k in enrolled:
+                has = bool(k["child_photo"])
+                with st.expander(("✅ " if has else "⚠️ ") + (k["name"] or "Unnamed"),
+                                 expanded=not has):
+                    pc1, pc2 = st.columns([1, 2])
+                    with pc1:
+                        if has:
+                            st.markdown(
+                                f"<img src='{k['child_photo'][0]['url']}' style='width:120px;"
+                                "height:150px;object-fit:cover;border-radius:50%;"
+                                "border:5px solid #F4978E'/>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(
+                                f"<img src='{avatar_uri(k.get('gender'))}' style='width:120px;"
+                                "height:150px;object-fit:cover;border-radius:50%;"
+                                "border:5px solid #EAD9F2'/>"
+                                "<div style='color:#8A94A6;font-size:.8rem;text-align:center'>"
+                                "default icon</div>", unsafe_allow_html=True)
+                    with pc2:
+                        child_photo_uploader(k, "ph")
 
     with t_today:
         st.caption(f"Attendance for {date_iso}")
@@ -1623,8 +1789,39 @@ def view_home():
     )
 
 
+def nav_footer(current: str = ""):
+    """Shared bottom navigation shown on every page except the check-in kiosk."""
+    items = [
+        ("home",    "🏠 Home",          "?view=home",   "_self"),
+        ("signup",  "📝 Waitlist",      "?view=signup", "_self"),
+        ("parent",  "🌈 Family Portal", "?view=parent", "_self"),
+        ("admin",   "📋 Admin",         "?view=admin",  "_self"),
+        ("website", "🌐 Website",       WEBSITE_URL,    "_blank"),
+    ]
+    parts = []
+    for key, label, href, tgt in items:
+        rel = " rel='noopener'" if tgt == "_blank" else ""
+        cur = " class='cur'" if key == current else ""
+        parts.append(f"<a{cur} href='{href}' target='{tgt}'{rel}>{label}</a>")
+    st.markdown(
+        "<style>"
+        ".appnav{display:flex;flex-wrap:wrap;gap:.3rem .6rem;justify-content:center;align-items:center;"
+        "max-width:640px;margin:1.8rem auto .2rem;padding-top:1rem;border-top:1px solid #ECEFF4}"
+        ".appnav a{text-decoration:none;font-family:'Baloo 2',cursive;font-weight:700;font-size:.95rem;"
+        "color:#6C7684;padding:.35rem .85rem;border-radius:999px;transition:background .12s ease,color .12s ease}"
+        ".appnav a:hover{color:#2B2B2B;background:#F4F6FA}"
+        ".appnav a.cur{color:#fff;background:#F4978E}"
+        "</style>"
+        "<div class='appnav'>" + "".join(parts) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 ROUTES = {
     "kiosk": view_kiosk, "signup": view_signup, "admin": view_admin,
     "parent": view_parent, "reset": view_reset, "home": view_home,
 }
-ROUTES.get(st.query_params.get("view", "home"), view_home)()
+_view = st.query_params.get("view", "home")
+ROUTES.get(_view, view_home)()
+if _view != "kiosk":
+    nav_footer(_view if _view in ROUTES else "home")
