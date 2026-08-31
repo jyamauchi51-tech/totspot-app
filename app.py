@@ -1041,8 +1041,8 @@ def view_signup():
                 st.error("Please fill in all required fields (*): child's first + last name, "
                          "parent name, phone, and email.")
                 return
-            # 1) SAVE FIRST — this is the only step that must succeed.
-            saved = False
+            saved = False       # went into Airtable
+            notified = False    # Megan got the details by email (backup capture)
             with st.spinner("Adding your child to our waitlist…"):
                 try:
                     store.add_kid({
@@ -1061,56 +1061,69 @@ def view_signup():
                 except Exception:
                     saved = False
 
-                # 2) Emails are BEST-EFFORT — a mail hiccup must never block the sign-up.
-                if saved:
-                    p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, "
-                               f"{parent2_email.strip()})\n" if parent2.strip() else "")
-                    heard_line = (heard + (f" — {heard_detail.strip()}"
-                                  if heard == "Other" and heard_detail.strip() else "")) or "—"
+                # ALWAYS email Megan the full details. If the Airtable save failed
+                # (e.g. the monthly API limit), this email is the backup capture —
+                # flagged for manual entry — so no family is ever lost. Email (Gmail)
+                # is independent of Airtable.
+                p2_line = (f"Parent 2: {parent2.strip()} ({parent2_phone.strip()}, "
+                           f"{parent2_email.strip()})\n" if parent2.strip() else "")
+                heard_line = (heard + (f" — {heard_detail.strip()}"
+                              if heard == "Other" and heard_detail.strip() else "")) or "—"
+                flag = ("" if saved else
+                        "⚠️ ACTION NEEDED: our database was temporarily unavailable, so this "
+                        "sign-up was NOT saved automatically. Please add this child to the "
+                        "waitlist by hand.\n\n")
+                subj = (f"[Tot Spot] New waitlist sign-up: {child.strip()}" if saved
+                        else f"[Tot Spot] ⚠️ MANUAL ENTRY NEEDED — {child.strip()}")
+                try:
+                    notify.send_email(
+                        EMAIL_CFG, subj,
+                        (flag +
+                         f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
+                         f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
+                         f"{p2_line}"
+                         f"Birthdate: {birthdate.strip() or '—'} "
+                         f"(age {compute_age(birthdate.strip(), S.now_local(TZ)) or '?'})\n"
+                         f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
+                         f"Cohort preference: {cohort}\n"
+                         f"Allergies: {notes.strip() or '—'}\n"
+                         f"Special needs: {special_needs.strip() or '—'}\n"
+                         f"Structured environment: {structured_env.strip() or '—'}\n"
+                         f"Heard about us: {heard_line}\n"
+                         f"Anything else: {anything_else.strip() or '—'}\n\n"
+                         + ("Open Admin → Waitlist to review." if saved
+                            else "Add them manually once the database is back.")),
+                    )
+                    notified = True
+                except Exception:
+                    notified = False
+
+                # Parent confirmation (best-effort)
+                if email.strip():
                     try:
+                        conf_msg = (f"Thank you for adding {child.strip()} to The Tot Spot "
+                                    "waitlist! We're so glad you're considering our play-based "
+                                    "preschool prep program. Ms. Megan will personally reach out "
+                                    "as soon as a spot opens up. In the meantime, feel free to "
+                                    "explore our website or reply with any questions — we'd love "
+                                    "to hear from you!")
+                        logo = _logo_bytes()
                         notify.send_email(
-                            EMAIL_CFG,
-                            f"[Tot Spot] New waitlist sign-up: {child.strip()}",
-                            (f"{child.strip()} joined the waitlist on {S.today_iso(TZ)}.\n\n"
-                             f"Parent 1: {parent.strip()} ({phone.strip()}, {email.strip()})\n"
-                             f"{p2_line}"
-                             f"Birthdate: {birthdate.strip() or '—'} "
-                             f"(age {compute_age(birthdate.strip(), S.now_local(TZ)) or '?'})\n"
-                             f"Gender: {gender or '—'}\nDesired school year: {school_year}\n"
-                             f"Cohort preference: {cohort}\n"
-                             f"Allergies: {notes.strip() or '—'}\n"
-                             f"Special needs: {special_needs.strip() or '—'}\n"
-                             f"Structured environment: {structured_env.strip() or '—'}\n"
-                             f"Heard about us: {heard_line}\n"
-                             f"Anything else: {anything_else.strip() or '—'}\n\n"
-                             f"Open Admin → Waitlist to review."),
-                        )
+                            EMAIL_CFG, "🌈 Thank you for your interest in The Tot Spot!",
+                            conf_msg + f"\n\nWebsite: {WEBSITE_URL}",
+                            to=email.strip(),
+                            html=notify.branded_email("Thank you for your interest! 🌈", conf_msg,
+                                                      WEBSITE_URL, WEBSITE_URL, CONTACT,
+                                                      button_label="Visit our website &rarr;"),
+                            inline_images=[("totspotlogo", logo, "png")] if logo else None)
                     except Exception:
                         pass
-                    if email.strip():
-                        try:
-                            conf_msg = (f"Thank you for adding {child.strip()} to The Tot Spot "
-                                        "waitlist! We're so glad you're considering our play-based "
-                                        "preschool prep program. Ms. Megan will personally reach out "
-                                        "as soon as a spot opens up. In the meantime, feel free to "
-                                        "explore our website or reply with any questions — we'd love "
-                                        "to hear from you!")
-                            logo = _logo_bytes()
-                            notify.send_email(
-                                EMAIL_CFG, "🌈 Thank you for your interest in The Tot Spot!",
-                                conf_msg + f"\n\nWebsite: {WEBSITE_URL}",
-                                to=email.strip(),
-                                html=notify.branded_email("Thank you for your interest! 🌈", conf_msg,
-                                                          WEBSITE_URL, WEBSITE_URL, CONTACT,
-                                                          button_label="Visit our website &rarr;"),
-                                inline_images=[("totspotlogo", logo, "png")] if logo else None)
-                        except Exception:
-                            pass
-            # 3) Confirm to the parent based ONLY on whether the save worked.
-            if not saved:
+
+            # Success as long as we captured them SOMEWHERE (Airtable or Megan's email).
+            if not (saved or notified):
                 fallback = CONTACT.get("email") or "contactthetotspot@gmail.com"
-                st.error(f"Sorry — we couldn't save your sign-up just now. Please try again in a "
-                         f"moment, or email us at {fallback} and we'll add you right away.")
+                st.error(f"Sorry — we couldn't submit your sign-up just now. Please email us at "
+                         f"{fallback} and we'll add you right away.")
                 return
             st.balloons()
             signup_thankyou(child)
