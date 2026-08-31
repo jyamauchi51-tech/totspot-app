@@ -168,6 +168,82 @@ if "store_bundle" not in st.session_state:
 store, IS_LIVE = st.session_state.store_bundle
 
 
+# ------------------------------------------------------------------ API caching
+# Airtable's free plan is rate/quota limited, and Streamlit re-runs the whole
+# script on every interaction — so without caching, each rerun would re-hit
+# Airtable many times. We cache reads, and auto-clear the relevant cache whenever
+# a write happens (the store's write methods are wrapped once per session, below).
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_kids():
+    return store.list_kids()
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def cached_checkins(date_iso):
+    return store.list_checkins_for_date(date_iso)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_announcements():
+    return store.list_announcements()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_updates():
+    return store.list_updates()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cached_album(kid_id):
+    return store.list_album(kid_id)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_daily_logs(kid_id):
+    return store.list_daily_logs(kid_id)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cached_daily_log(kid_id, date_iso):
+    return store.get_daily_log(kid_id, date_iso)
+
+
+# write method -> which cached reader(s) to invalidate right after it runs
+_WRITE_CLEARS = {
+    "add_checkin": ["cached_checkins"], "set_checkout": ["cached_checkins"],
+    "add_kid": ["cached_kids"], "update_kid": ["cached_kids"],
+    "update_kid_status": ["cached_kids"], "delete_kid": ["cached_kids"],
+    "set_child_photo": ["cached_kids"],
+    "add_announcement": ["cached_announcements"],
+    "add_announcement_photos": ["cached_announcements"],
+    "delete_announcement": ["cached_announcements"],
+    "add_update": ["cached_updates"], "add_update_photos": ["cached_updates"],
+    "add_album_photo": ["cached_album"], "delete_album_photo": ["cached_album"],
+    "upsert_daily_log": ["cached_daily_logs", "cached_daily_log"],
+}
+
+if not st.session_state.get("_store_wrapped"):
+    for _m, _cnames in _WRITE_CLEARS.items():
+        _orig = getattr(store, _m, None)
+        if _orig is None:
+            continue
+
+        def _mk(orig, cnames):
+            def _wrapped(*a, **k):
+                result = orig(*a, **k)
+                for cn in cnames:
+                    fn = globals().get(cn)
+                    if fn is not None:
+                        try:
+                            fn.clear()
+                        except Exception:
+                            pass
+                return result
+            return _wrapped
+        setattr(store, _m, _mk(_orig, _cnames))
+    st.session_state["_store_wrapped"] = True
+
+
 # ------------------------------------------------------------------ styling
 COLORS = {
     "coral": "#F4978E", "orange": "#F6B26B", "yellow": "#FCE38A",
@@ -498,7 +574,7 @@ def child_details_md(k: dict, now) -> str:
 
 def enrolled_by_pin(pin: str) -> list[dict]:
     pin = (pin or "").strip()
-    return [k for k in store.list_kids()
+    return [k for k in cached_kids()
             if k["status"] == "Enrolled" and (k.get("pin") or "").strip() == pin]
 
 
@@ -508,7 +584,7 @@ def kids_for_login(email: str) -> list[dict]:
     if not e:
         return []
     out = []
-    for k in store.list_kids():
+    for k in cached_kids():
         if k["status"] != "Enrolled":
             continue
         emails = {(k.get("login_email") or "").strip().lower(),
@@ -597,7 +673,7 @@ def menu_nav(options: list[str], key: str, logout: bool = False) -> str:
 
 
 def assign_pin(kid_id: str):
-    existing = {(k.get("pin") or "") for k in store.list_kids()}
+    existing = {(k.get("pin") or "") for k in cached_kids()}
     store.update_kid(kid_id, {"pin": S.new_pin(existing)})
 
 
@@ -793,7 +869,7 @@ def avatar_uri(gender: str) -> str:
 # check-in is a single action rather than 6 keystrokes.
 def _ci_toggle(kid_id: str, first: str):
     date_iso = S.today_iso(TZ)
-    todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
+    todays = {c["kid_id"]: c for c in cached_checkins(date_iso)}
     rec = todays.get(kid_id)
     if rec is not None and not rec.get("check_out"):
         store.set_checkout(rec["id"], S.time_str(TZ))
@@ -809,7 +885,7 @@ def checkin_grid(enrolled: list[dict]):
         st.info("No children are scheduled for check-in today.")
         return
     date_iso = S.today_iso(TZ)
-    todays = {c["kid_id"]: c for c in store.list_checkins_for_date(date_iso)}
+    todays = {c["kid_id"]: c for c in cached_checkins(date_iso)}
 
     def inside(k):
         r = todays.get(k["id"])
@@ -897,7 +973,7 @@ def view_kiosk():
                     f"font-size:1.05rem;margin:.2rem 0 .4rem'>💬 {quote}</div>", unsafe_allow_html=True)
     banner()
 
-    enrolled = [k for k in store.list_kids() if k["status"] == "Enrolled"]
+    enrolled = [k for k in cached_kids() if k["status"] == "Enrolled"]
     enrolled.sort(key=lambda k: (k["name"] or "").lower())
     checkin_grid(enrolled_for_today(enrolled, S.now_local(TZ)))
 
@@ -1157,11 +1233,11 @@ def view_admin():
         st.caption("✉️ Email notifications aren't configured yet — profile-change "
                    "alerts won't send until the [email] secrets are set.")
 
-    kids = store.list_kids()
+    kids = cached_kids()
     waitlist = [k for k in kids if k["status"] == "Waitlist"]
     enrolled = [k for k in kids if k["status"] == "Enrolled"]
     date_iso = S.today_iso(TZ)
-    todays = store.list_checkins_for_date(date_iso)
+    todays = cached_checkins(date_iso)
     here_now = len({c["kid_id"] for c in todays if not c["check_out"]})
 
     m1, m2, m3 = st.columns(3)
@@ -1317,7 +1393,7 @@ def view_admin():
         if not enrolled:
             st.write("No enrolled children yet.")
         for k in enrolled:
-            existing = store.get_daily_log(k["id"], date_iso) or {}
+            existing = cached_daily_log(k["id"], date_iso) or {}
             with st.expander(f"{k['name']}" + (f"  ·  {k['cohort']}" if k["cohort"] else "")):
                 with st.form(f"log_{k['id']}"):
                     pt = st.multiselect("Potty type", S.POTTY_TYPE,
@@ -1378,7 +1454,7 @@ def view_admin():
                 "✅ Announcement posted!" + (f" 💌 Emailed {sent} of {len(recips)} enrolled families." if do_email else ""))
             st.rerun()
         st.divider()
-        for a in store.list_announcements():
+        for a in cached_announcements():
             c1, c2 = st.columns([6, 1])
             c1.markdown(f"<div class='post'><div class='when'>{a['posted_date']}</div>"
                         f"<div class='head'>{a['title']}</div>{a['message']}</div>", unsafe_allow_html=True)
@@ -1413,7 +1489,7 @@ def view_admin():
             st.session_state["upd_flash"] = "🌈 Daily update posted!"
             st.rerun()
         st.divider()
-        for u in store.list_updates()[:10]:
+        for u in cached_updates()[:10]:
             tag = f" · {u['cohort']}" if u["cohort"] else ""
             st.markdown(f"<div class='post'><div class='when'>{u['date']}{tag}</div>{u['note']}</div>",
                         unsafe_allow_html=True)
@@ -1447,7 +1523,7 @@ def view_admin():
             st.write("No enrolled children yet.")
         st.divider()
         for k in enrolled:
-            items = store.list_album(k["id"])
+            items = cached_album(k["id"])
             if not items:
                 continue
             total = sum(len(it["photos"]) for it in items)
@@ -1533,13 +1609,13 @@ def render_parent_daily(kids: list[dict]):
     today = S.today_iso(TZ)
     for k in kids:
         st.markdown(f"#### 📋 {k['name']}")
-        log = store.get_daily_log(k["id"], today)
+        log = cached_daily_log(k["id"], today)
         if log:
             st.markdown(daily_report_html(log, "Today · " + now.strftime("%b ") + str(now.day)),
                         unsafe_allow_html=True)
         else:
             st.caption("No report posted yet today.")
-        history = [lg for lg in store.list_daily_logs(k["id"]) if lg["date"] != today]
+        history = [lg for lg in cached_daily_logs(k["id"]) if lg["date"] != today]
         if history:
             with st.expander("Past days"):
                 for lg in history[:20]:
@@ -1548,7 +1624,7 @@ def render_parent_daily(kids: list[dict]):
 
 def render_news(my_cohorts: set):
     st.markdown("### 📣 Announcements")
-    anns = store.list_announcements()
+    anns = cached_announcements()
     if not anns:
         st.caption("No announcements right now.")
     for a in anns[:10]:
@@ -1559,7 +1635,7 @@ def render_news(my_cohorts: set):
             for i, ph in enumerate(a["photos"]):
                 pcols[i % 4].image(ph["url"], width="stretch")
     st.markdown("### 🌈 Daily updates")
-    updates = [u for u in store.list_updates()
+    updates = [u for u in cached_updates()
                if not u["cohort"] or u["cohort"] == "All" or u["cohort"] in my_cohorts]
     if not updates:
         st.caption("No updates yet.")
@@ -1577,7 +1653,7 @@ def render_scrapbook(kids: list[dict]):
                "(on iPad: Share → Print). Stay on this tab when you print.")
     logo_tag = f"<img src='{LOGO_URI}'/>" if LOGO_URI else ""
     for k in kids:
-        items = store.list_album(k["id"])
+        items = cached_album(k["id"])
         if not items:
             st.info(f"No scrapbook photos yet for {k['name']}. Ms. Megan adds these!")
             continue
@@ -1726,7 +1802,7 @@ def view_parent():
     my_cohorts = {k["cohort"] for k in kids if k["cohort"]}
     st.markdown(f"<div class='subtitle'>Welcome, family of {names}! 👋</div>", unsafe_allow_html=True)
 
-    book_count = sum(len(it["photos"]) for k in kids for it in store.list_album(k["id"]))
+    book_count = sum(len(it["photos"]) for k in kids for it in cached_album(k["id"]))
     book_label = f"📖 Scrapbook ({book_count})" if book_count else "📖 Scrapbook"
     t_home, t_daily, t_news, t_profile, t_book, t_contact = st.tabs(
         ["🏠 Home", "📋 Daily Report", "📣 Announcements", "🪪 Profile", book_label, "📇 Contact"]
@@ -1774,7 +1850,7 @@ def view_reset():
     cols = st.columns([1, 2, 1])
     with cols[1]:
         token = st.query_params.get("token", "")
-        kids = [k for k in store.list_kids()
+        kids = [k for k in cached_kids()
                 if token and (k.get("reset_token") or "") == token and _reset_valid(k)]
         if not kids:
             st.error("This reset link is invalid or has expired. "
