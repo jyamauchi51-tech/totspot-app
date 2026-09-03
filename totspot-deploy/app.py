@@ -171,55 +171,97 @@ store, IS_LIVE = st.session_state.store_bundle
 # ------------------------------------------------------------------ API caching
 # Airtable's free plan is rate/quota limited, and Streamlit re-runs the whole
 # script on every interaction — so without caching, each rerun would re-hit
-# Airtable many times. We cache reads, and auto-clear the relevant cache whenever
-# a write happens (the store's write methods are wrapped once per session, below).
+# Airtable many times. We cache reads (the "_raw" fns), and auto-clear the relevant
+# cache whenever a write happens (the store's write methods are wrapped, below).
+# Each public reader wraps the cached one so that if Airtable is DOWN (e.g. over
+# its monthly limit) the app degrades gracefully — it returns a safe default and
+# flags `_data_down` instead of crashing or hanging. Exceptions are NOT cached, so
+# it retries (and self-heals) as soon as Airtable is reachable again.
+def _safe(raw_fn, default, *args):
+    try:
+        val = raw_fn(*args)
+        st.session_state["_data_down"] = False
+        return val
+    except Exception:
+        st.session_state["_data_down"] = True
+        return default
+
+
 @st.cache_data(ttl=600, show_spinner=False)
-def cached_kids():
+def _kids_raw():
     return store.list_kids()
 
 
 @st.cache_data(ttl=120, show_spinner=False)
-def cached_checkins(date_iso):
+def _checkins_raw(date_iso):
     return store.list_checkins_for_date(date_iso)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def cached_announcements():
+def _announcements_raw():
     return store.list_announcements()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def cached_updates():
+def _updates_raw():
     return store.list_updates()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def cached_album(kid_id):
+def _album_raw(kid_id):
     return store.list_album(kid_id)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def cached_daily_logs(kid_id):
+def _daily_logs_raw(kid_id):
     return store.list_daily_logs(kid_id)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def cached_daily_log(kid_id, date_iso):
+def _daily_log_raw(kid_id, date_iso):
     return store.get_daily_log(kid_id, date_iso)
+
+
+def cached_kids():
+    return _safe(_kids_raw, [])
+
+
+def cached_checkins(date_iso):
+    return _safe(_checkins_raw, [], date_iso)
+
+
+def cached_announcements():
+    return _safe(_announcements_raw, [])
+
+
+def cached_updates():
+    return _safe(_updates_raw, [])
+
+
+def cached_album(kid_id):
+    return _safe(_album_raw, [], kid_id)
+
+
+def cached_daily_logs(kid_id):
+    return _safe(_daily_logs_raw, [], kid_id)
+
+
+def cached_daily_log(kid_id, date_iso):
+    return _safe(_daily_log_raw, None, kid_id, date_iso)
 
 
 # write method -> which cached reader(s) to invalidate right after it runs
 _WRITE_CLEARS = {
-    "add_checkin": ["cached_checkins"], "set_checkout": ["cached_checkins"],
-    "add_kid": ["cached_kids"], "update_kid": ["cached_kids"],
-    "update_kid_status": ["cached_kids"], "delete_kid": ["cached_kids"],
-    "set_child_photo": ["cached_kids"],
-    "add_announcement": ["cached_announcements"],
-    "add_announcement_photos": ["cached_announcements"],
-    "delete_announcement": ["cached_announcements"],
-    "add_update": ["cached_updates"], "add_update_photos": ["cached_updates"],
-    "add_album_photo": ["cached_album"], "delete_album_photo": ["cached_album"],
-    "upsert_daily_log": ["cached_daily_logs", "cached_daily_log"],
+    "add_checkin": ["_checkins_raw"], "set_checkout": ["_checkins_raw"],
+    "add_kid": ["_kids_raw"], "update_kid": ["_kids_raw"],
+    "update_kid_status": ["_kids_raw"], "delete_kid": ["_kids_raw"],
+    "set_child_photo": ["_kids_raw"],
+    "add_announcement": ["_announcements_raw"],
+    "add_announcement_photos": ["_announcements_raw"],
+    "delete_announcement": ["_announcements_raw"],
+    "add_update": ["_updates_raw"], "add_update_photos": ["_updates_raw"],
+    "add_album_photo": ["_album_raw"], "delete_album_photo": ["_album_raw"],
+    "upsert_daily_log": ["_daily_logs_raw", "_daily_log_raw"],
 }
 
 if not st.session_state.get("_store_wrapped"):
@@ -426,6 +468,10 @@ def logo_header(max_width: int = 440):
 def banner():
     if not IS_LIVE:
         st.info("🧪 Demo mode — saving to a local file, not Airtable.", icon="🧪")
+    if st.session_state.get("_data_down"):
+        st.warning("⚠️ Live data is temporarily unavailable (Airtable's monthly limit was "
+                   "reached). New waitlist sign-ups are still captured by email. This clears "
+                   "automatically once the limit resets.")
 
 
 def cohorts_meeting_today(now) -> list[str]:
