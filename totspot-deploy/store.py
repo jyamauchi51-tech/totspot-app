@@ -330,7 +330,21 @@ class AirtableStore:
     def __init__(self, token: str, base_id: str):
         from pyairtable import Api
 
-        api = Api(token)
+        # Fail fast instead of hanging: when Airtable is rate-limited or over its
+        # monthly cap it returns 429, and pyairtable's default retry backs off for
+        # many seconds per call — which freezes the whole app. Retry at most once,
+        # briefly (and only for safe/idempotent methods, so writes aren't doubled),
+        # with a hard timeout.
+        try:
+            from urllib3.util.retry import Retry
+            _retry = Retry(total=1, backoff_factor=0.3,
+                           status_forcelist=(429, 500, 502, 503, 504))
+            api = Api(token, retry_strategy=_retry, timeout=(5, 20))
+        except TypeError:
+            try:
+                api = Api(token, timeout=(5, 20))
+            except TypeError:
+                api = Api(token)
         self.kids = api.table(base_id, KIDS_TABLE)
         self.checkins = api.table(base_id, CHECKINS_TABLE)
         self.announcements = api.table(base_id, ANNOUNCEMENTS_TABLE)
