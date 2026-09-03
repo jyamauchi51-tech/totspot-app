@@ -33,6 +33,20 @@ KIDS_TABLE = "Kids"
 CHECKINS_TABLE = "Check-Ins"
 ANNOUNCEMENTS_TABLE = "Announcements"
 UPDATES_TABLE = "Daily Updates"
+LOGS_TABLE = "Daily Logs"
+ALBUM_TABLE = "Album"
+
+# Daily-log field names + option lists (shared with the app UI)
+LOG_FIELDS = {
+    "date": "Date", "kid_id": "Child ID", "potty_type": "Potty Type",
+    "potty_progress": "Potty Progress", "snack": "Snack", "injury": "Injury",
+    "mood": "Mood", "behavior": "Behavior Notes",
+}
+POTTY_TYPE = ["Pee", "Poo"]
+POTTY_PROGRESS = ["Toilet independently", "Tried", "Accident",
+                  "Wet diaper change", "BM diaper change"]
+SNACK = ["Ate all", "Ate some", "Ate none"]
+MOOD = ["Happy", "Calm", "Sad", "Tired", "Fussy", "Not feeling well"]
 
 KID_FIELDS = {
     "name": "Child Name",
@@ -70,6 +84,15 @@ KID_FIELDS = {
     "parent2_name": "Parent 2 Name",
     "parent2_phone": "Parent 2 Phone",
     "parent2_email": "Parent 2 Email",
+    "login_password": "Login Password",
+    "login_email": "Login Email",
+    "reset_token": "Reset Token",
+    "reset_expires": "Reset Expires",
+    "special_needs": "Special Needs",
+    "structured_env": "Structured Environment",
+    "heard_about": "Heard About Us",
+    "heard_about_detail": "Heard About Detail",
+    "anything_else": "Anything Else",
 }
 KID_ATTACH_FIELD = "Enrollment Form"
 KID_PHOTO_FIELD = "Child Photo"
@@ -112,13 +135,12 @@ def new_family_code() -> str:
 
 
 def new_pin(existing: set[str]) -> str:
-    """A 4-digit code not already in `existing`."""
-    for _ in range(10000):
-        raw = uuid.uuid4().int % 10000
-        pin = f"{raw:04d}"
+    """A 6-digit code not already in `existing`."""
+    for _ in range(200000):
+        pin = f"{uuid.uuid4().int % 1000000:06d}"
         if pin not in existing:
             return pin
-    return "0000"
+    return "000000"
 
 
 # ============================================================ LOCAL BACKEND
@@ -135,7 +157,7 @@ class LocalStore:
 
     def _read(self) -> dict:
         db = json.loads(self.path.read_text(encoding="utf-8"))
-        for key in ("kids", "checkins", "announcements", "updates"):
+        for key in ("kids", "checkins", "announcements", "updates", "daily_logs", "album"):
             db.setdefault(key, [])
         return db
 
@@ -260,17 +282,75 @@ class LocalStore:
                     u.setdefault("photos", []).append(self._save_file(filename, content))
         self._write(db)
 
+    # daily logs (per child, per day)
+    def get_daily_log(self, kid_id: str, date_iso: str):
+        for lg in self._read()["daily_logs"]:
+            if lg["kid_id"] == kid_id and lg["date"] == date_iso:
+                return lg
+        return None
+
+    def upsert_daily_log(self, kid_id: str, date_iso: str, data: dict) -> dict:
+        db = self._read()
+        for lg in db["daily_logs"]:
+            if lg["kid_id"] == kid_id and lg["date"] == date_iso:
+                lg.update(data)
+                self._write(db)
+                return lg
+        rec = {"id": str(uuid.uuid4()), "kid_id": kid_id, "date": date_iso, **data}
+        db["daily_logs"].append(rec)
+        self._write(db)
+        return rec
+
+    def list_daily_logs(self, kid_id: str) -> list[dict]:
+        logs = [lg for lg in self._read()["daily_logs"] if lg["kid_id"] == kid_id]
+        return sorted(logs, key=lambda lg: lg.get("date", ""), reverse=True)
+
+    # album / scrapbook
+    def add_album_photo(self, kid_id: str, date_iso: str, caption: str,
+                        filename: str, content: bytes) -> dict:
+        db = self._read()
+        rec = {"id": str(uuid.uuid4()), "kid_id": kid_id, "date": date_iso,
+               "caption": caption, "photos": [self._save_file(filename, content)]}
+        db["album"].append(rec)
+        self._write(db)
+        return rec
+
+    def list_album(self, kid_id: str) -> list[dict]:
+        items = [a for a in self._read()["album"] if a["kid_id"] == kid_id]
+        return sorted(items, key=lambda a: a.get("date", ""), reverse=True)
+
+    def delete_album_photo(self, item_id: str) -> None:
+        db = self._read()
+        db["album"] = [a for a in db["album"] if a["id"] != item_id]
+        self._write(db)
+
 
 # ============================================================ AIRTABLE BACKEND
 class AirtableStore:
     def __init__(self, token: str, base_id: str):
         from pyairtable import Api
 
-        api = Api(token)
+        # Fail fast instead of hanging: when Airtable is rate-limited or over its
+        # monthly cap it returns 429, and pyairtable's default retry backs off for
+        # many seconds per call — which freezes the whole app. Retry at most once,
+        # briefly (and only for safe/idempotent methods, so writes aren't doubled),
+        # with a hard timeout.
+        try:
+            from urllib3.util.retry import Retry
+            _retry = Retry(total=1, backoff_factor=0.3,
+                           status_forcelist=(429, 500, 502, 503, 504))
+            api = Api(token, retry_strategy=_retry, timeout=(5, 20))
+        except TypeError:
+            try:
+                api = Api(token, timeout=(5, 20))
+            except TypeError:
+                api = Api(token)
         self.kids = api.table(base_id, KIDS_TABLE)
         self.checkins = api.table(base_id, CHECKINS_TABLE)
         self.announcements = api.table(base_id, ANNOUNCEMENTS_TABLE)
         self.updates = api.table(base_id, UPDATES_TABLE)
+        self.logs = api.table(base_id, LOGS_TABLE)
+        self.album = api.table(base_id, ALBUM_TABLE)
 
     @staticmethod
     def _attachments(value) -> list[dict]:
@@ -394,6 +474,68 @@ class AirtableStore:
     def add_update_photos(self, update_id: str, files: list[tuple[str, bytes]]) -> None:
         for filename, content in files:
             self.updates.upload_attachment(update_id, "Photos", filename=filename, content=content)
+
+    # daily logs (per child, per day)
+    @staticmethod
+    def _log_from_record(rec: dict) -> dict:
+        f = {k.strip(): v for k, v in rec.get("fields", {}).items()}
+        return {
+            "id": rec["id"],
+            "kid_id": f.get(LOG_FIELDS["kid_id"], ""),
+            "date": f.get(LOG_FIELDS["date"], ""),
+            "potty_type": f.get(LOG_FIELDS["potty_type"], []) or [],
+            "potty_progress": f.get(LOG_FIELDS["potty_progress"], []) or [],
+            "snack": f.get(LOG_FIELDS["snack"], ""),
+            "injury": f.get(LOG_FIELDS["injury"], ""),
+            "mood": f.get(LOG_FIELDS["mood"], []) or [],
+            "behavior": f.get(LOG_FIELDS["behavior"], ""),
+        }
+
+    @staticmethod
+    def _log_payload(data: dict) -> dict:
+        keys = ("potty_type", "potty_progress", "snack", "injury", "mood", "behavior")
+        return {LOG_FIELDS[k]: data[k] for k in keys if k in data}
+
+    def get_daily_log(self, kid_id: str, date_iso: str):
+        formula = "AND({%s}='%s',{%s}='%s')" % (
+            LOG_FIELDS["kid_id"], kid_id, LOG_FIELDS["date"], date_iso)
+        recs = self.logs.all(formula=formula)
+        return self._log_from_record(recs[0]) if recs else None
+
+    def upsert_daily_log(self, kid_id: str, date_iso: str, data: dict) -> dict:
+        existing = self.get_daily_log(kid_id, date_iso)
+        payload = self._log_payload(data)
+        if existing:
+            self.logs.update(existing["id"], payload, typecast=True)
+            return {**existing, **data}
+        payload[LOG_FIELDS["kid_id"]] = kid_id
+        payload[LOG_FIELDS["date"]] = date_iso
+        return self._log_from_record(self.logs.create(payload, typecast=True))
+
+    def list_daily_logs(self, kid_id: str) -> list[dict]:
+        recs = self.logs.all(formula="{%s}='%s'" % (LOG_FIELDS["kid_id"], kid_id))
+        return sorted([self._log_from_record(r) for r in recs],
+                      key=lambda lg: lg["date"], reverse=True)
+
+    # album / scrapbook
+    def add_album_photo(self, kid_id: str, date_iso: str, caption: str,
+                        filename: str, content: bytes) -> dict:
+        rec = self.album.create({"Child ID": kid_id, "Date": date_iso, "Caption": caption})
+        self.album.upload_attachment(rec["id"], "Photo", filename=filename, content=content)
+        return {"id": rec["id"], "kid_id": kid_id, "date": date_iso, "caption": caption, "photos": []}
+
+    def list_album(self, kid_id: str) -> list[dict]:
+        recs = self.album.all(formula="{Child ID}='%s'" % kid_id)
+        out = [{
+            "id": r["id"], "kid_id": kid_id,
+            "date": r["fields"].get("Date", ""),
+            "caption": r["fields"].get("Caption", ""),
+            "photos": self._attachments(r["fields"].get("Photo", [])),
+        } for r in recs]
+        return sorted(out, key=lambda a: a["date"], reverse=True)
+
+    def delete_album_photo(self, item_id: str) -> None:
+        self.album.delete(item_id)
 
 
 # --- Backend selection --------------------------------------------------------
